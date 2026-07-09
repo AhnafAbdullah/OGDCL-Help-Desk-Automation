@@ -1,0 +1,169 @@
+@page "/settings"
+@inherits AppPage
+
+<PageTitle>Settings — OGDCL</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>Settings</h1>
+        <div class="page-sub">Complaint routing, categories, and building zones</div>
+    </div>
+</div>
+
+@if (Error is not null)
+{
+    <div class="alert alert-error">@Error</div>
+}
+@if (_success is not null)
+{
+    <div class="alert alert-ok">@_success</div>
+}
+
+<div class="card">
+    <h2>Assignment rules</h2>
+    <p class="hint">Each complaint category routes to one department. New tickets are auto-assigned to the least-loaded active handler there.</p>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Category</th><th>Routes to</th><th>Default priority</th></tr></thead>
+            <tbody>
+                @foreach (var r in _rules)
+                {
+                    <tr>
+                        <td>@r.Category</td>
+                        <td>@r.Department</td>
+                        <td><span class="badge p-@r.DefaultPriority.ToString().ToLower()">@r.DefaultPriority</span></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <label style="margin-top:16px">Add or change a rule</label>
+    <div class="inline" style="max-width:720px; flex-wrap:wrap">
+        <select @bind="_ruleCategoryId">
+            <option value="0">Category…</option>
+            @foreach (var c in _categories)
+            {
+                <option value="@c.Id">@c.Name</option>
+            }
+        </select>
+        <select @bind="_ruleDepartmentId">
+            <option value="0">Department…</option>
+            @foreach (var d in _departments)
+            {
+                <option value="@d.Id">@d.Name</option>
+            }
+        </select>
+        <select @bind="_rulePriority">
+            @foreach (var p in Enum.GetValues<TicketPriority>())
+            {
+                <option value="@p">@p</option>
+            }
+        </select>
+        <button class="btn btn-sm" @onclick="SaveRuleAsync">Save rule</button>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Complaint categories</h2>
+    <div>
+        @foreach (var c in _categories)
+        {
+            <span class="badge p-medium" style="margin:0 6px 6px 0">@c.Name</span>
+        }
+    </div>
+    <div class="inline" style="max-width:420px; margin-top:10px">
+        <input type="text" @bind="_newCategory" placeholder="New category name" />
+        <button class="btn btn-sm" @onclick="AddCategoryAsync">Add</button>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Building zones</h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Zone</th><th>Access</th></tr></thead>
+            <tbody>
+                @foreach (var z in _zones)
+                {
+                    <tr>
+                        <td>@z.Name</td>
+                        <td>
+                            @if (z.IsRestricted)
+                            {
+                                <span class="badge badge-restricted">Restricted</span>
+                            }
+                            else
+                            {
+                                <span class="badge s-arrived">General</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <div class="inline" style="max-width:520px; margin-top:10px">
+        <input type="text" @bind="_newZone" placeholder="New zone name" />
+        <div class="check" style="margin:0"><input type="checkbox" @bind="_newZoneRestricted" /> <span>Restricted</span></div>
+        <button class="btn btn-sm" @onclick="AddZoneAsync">Add</button>
+    </div>
+</div>
+
+@code {
+    private List<AssignmentRuleDto> _rules = [];
+    private List<CategoryDto> _categories = [];
+    private List<DepartmentDto> _departments = [];
+    private List<ZoneDto> _zones = [];
+    private int _ruleCategoryId;
+    private int _ruleDepartmentId;
+    private TicketPriority _rulePriority = TicketPriority.Medium;
+    private string _newCategory = "";
+    private string _newZone = "";
+    private bool _newZoneRestricted;
+    private string? _success;
+
+    protected override async Task LoadAsync()
+    {
+        _rules = await Api.GetRulesAsync();
+        _categories = await Api.GetCategoriesAsync();
+        _departments = await Api.GetDepartmentsAsync();
+        _zones = await Api.GetZonesAsync();
+    }
+
+    private async Task SaveRuleAsync()
+    {
+        if (_ruleCategoryId == 0 || _ruleDepartmentId == 0) { Error = "Pick both a category and a department."; return; }
+        await Try(async () =>
+        {
+            await Api.UpsertRuleAsync(_ruleCategoryId, _ruleDepartmentId, _rulePriority);
+            _rules = await Api.GetRulesAsync();
+            _success = "Rule saved.";
+        });
+    }
+
+    private async Task AddCategoryAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newCategory)) return;
+        await Try(async () =>
+        {
+            await Api.CreateCategoryAsync(_newCategory);
+            _categories = await Api.GetCategoriesAsync();
+            _newCategory = "";
+            _success = "Category added. Remember to add a routing rule for it.";
+        });
+    }
+
+    private async Task AddZoneAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newZone)) return;
+        await Try(async () =>
+        {
+            await Api.CreateZoneAsync(_newZone, _newZoneRestricted);
+            _zones = await Api.GetZonesAsync();
+            _newZone = "";
+            _newZoneRestricted = false;
+            _success = "Zone added.";
+        });
+    }
+}

@@ -1,0 +1,177 @@
+@page "/tickets/{Id:int}"
+@inherits AppPage
+
+<PageTitle>Ticket — OGDCL</PageTitle>
+
+@if (Error is not null)
+{
+    <div class="alert alert-error">@Error</div>
+}
+
+@if (_t is null)
+{
+    @if (!Loading)
+    {
+        <div class="empty">Ticket not found or not accessible.</div>
+    }
+}
+else
+{
+    <div class="page-head">
+        <div>
+            <h1>@_t.TicketNumber · @_t.Title</h1>
+            <div class="page-sub">
+                <span class="badge s-@_t.Status.ToString().ToLower()">@_t.Status</span>
+                <span class="badge p-@_t.Priority.ToString().ToLower()">@_t.Priority</span>
+            </div>
+        </div>
+        <a class="btn btn-secondary" href="/tickets">← Back</a>
+    </div>
+
+    <div class="card">
+        <div class="meta-grid">
+            <div class="meta-item"><div class="k">Category</div><div class="v">@_t.Category</div></div>
+            <div class="meta-item"><div class="k">Department</div><div class="v">@(_t.Department ?? "—")</div></div>
+            <div class="meta-item"><div class="k">Created by</div><div class="v">@_t.CreatedBy</div></div>
+            <div class="meta-item"><div class="k">Assigned to</div><div class="v">@(_t.AssignedTo ?? "Unassigned")</div></div>
+            <div class="meta-item"><div class="k">Created</div><div class="v">@_t.CreatedAt.ToLocalTime().ToString("HH:mm dd MMM yyyy")</div></div>
+        </div>
+        <p style="margin-bottom:0; margin-top:14px; white-space:pre-wrap">@_t.Description</p>
+        @if (_t.Attachments.Count > 0)
+        {
+            <div style="margin-top:12px">
+                <div class="k hint">Attachments</div>
+                @foreach (var a in _t.Attachments)
+                {
+                    <div class="hint">📎 @a.FileName (@FormatSize(a.SizeBytes))</div>
+                }
+            </div>
+        }
+    </div>
+
+    @if (ShowActions)
+    {
+        <div class="card">
+            <h2>Actions</h2>
+            <label>Note (optional, recorded in the history)</label>
+            <input type="text" @bind="_note" placeholder="e.g. Replaced the cable" />
+            <div class="inline" style="margin-top:12px; flex-wrap:wrap">
+                @if (CanWork && _t.Status == TicketStatus.Assigned)
+                {
+                    <button class="btn btn-sm" @onclick="@(() => MoveAsync(TicketStatus.InProgress))">Start work</button>
+                }
+                @if (CanWork && _t.Status == TicketStatus.InProgress)
+                {
+                    <button class="btn btn-sm" @onclick="@(() => MoveAsync(TicketStatus.Resolved))">Mark resolved</button>
+                }
+                @if (_t.Status == TicketStatus.Resolved && (IsCreator || CanWork))
+                {
+                    <button class="btn btn-sm" @onclick="@(() => MoveAsync(TicketStatus.Closed))">Close ticket</button>
+                }
+                @if (_t.Status == TicketStatus.Resolved && (IsCreator || Auth.IsAdmin))
+                {
+                    <button class="btn btn-sm btn-secondary" @onclick="@(() => MoveAsync(TicketStatus.InProgress))">Reopen</button>
+                }
+            </div>
+
+            @if (Auth.IsAdmin && _t.Status != TicketStatus.Closed)
+            {
+                <label style="margin-top:16px">Reassign to handler</label>
+                <div class="inline" style="max-width:420px">
+                    <select @bind="_handlerId">
+                        <option value="0">Select handler…</option>
+                        @foreach (var h in _handlers)
+                        {
+                            <option value="@h.Id">@h.DisplayName (@h.Department)</option>
+                        }
+                    </select>
+                    <button class="btn btn-sm btn-secondary" @onclick="AssignAsync">Assign</button>
+                </div>
+            }
+        </div>
+    }
+
+    @if (IsCreator && _t.Status is TicketStatus.Resolved or TicketStatus.Closed && _t.Feedback is null)
+    {
+        <div class="card">
+            <h2>How was this handled?</h2>
+            <div class="inline" style="max-width:520px">
+                <select @bind="_rating">
+                    <option value="5">★★★★★ Excellent</option>
+                    <option value="4">★★★★ Good</option>
+                    <option value="3">★★★ Okay</option>
+                    <option value="2">★★ Poor</option>
+                    <option value="1">★ Very poor</option>
+                </select>
+                <input type="text" @bind="_feedbackComment" placeholder="Optional comment" />
+                <button class="btn btn-sm" @onclick="FeedbackAsync">Send</button>
+            </div>
+        </div>
+    }
+
+    @if (_t.Feedback is not null)
+    {
+        <div class="card">
+            <h2>Feedback</h2>
+            <div>@(new string('★', _t.Feedback.Rating))@(new string('☆', 5 - _t.Feedback.Rating)) — @(_t.Feedback.Comment ?? "no comment")</div>
+        </div>
+    }
+
+    <div class="card">
+        <h2>History</h2>
+        <ul class="timeline">
+            @foreach (var h in Enumerable.Reverse(_t.StatusHistory))
+            {
+                <li>
+                    <div><strong>@(h.FromStatus is null ? "Created" : $"{h.FromStatus} → {h.ToStatus}")</strong> by @h.ChangedBy</div>
+                    @if (!string.IsNullOrWhiteSpace(h.Note))
+                    {
+                        <div class="hint">@h.Note</div>
+                    }
+                    <div class="when">@h.ChangedAt.ToLocalTime().ToString("HH:mm dd MMM yyyy")</div>
+                </li>
+            }
+        </ul>
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private TicketDto? _t;
+    private List<AdminUserDto> _handlers = [];
+    private string _note = "";
+    private string _feedbackComment = "";
+    private int _rating = 5;
+    private int _handlerId;
+
+    private bool IsCreator => _t?.CreatedById == Auth.User?.Id;
+    private bool IsAssigned => _t?.AssignedToId == Auth.User?.Id;
+    private bool CanWork => IsAssigned || Auth.IsAdmin;
+    private bool ShowActions => _t is not null && _t.Status != TicketStatus.Closed && (IsCreator || CanWork);
+
+    protected override async Task LoadAsync()
+    {
+        _t = await Api.GetTicketAsync(Id);
+        if (Auth.IsAdmin)
+            _handlers = await Api.GetUsersAsync(UserRole.Handler);
+    }
+
+    private async Task MoveAsync(TicketStatus to) => await Try(async () =>
+    {
+        _t = await Api.UpdateTicketStatusAsync(Id, to, string.IsNullOrWhiteSpace(_note) ? null : _note);
+        _note = "";
+    });
+
+    private async Task AssignAsync()
+    {
+        if (_handlerId == 0) return;
+        await Try(async () => _t = await Api.AssignTicketAsync(Id, _handlerId));
+    }
+
+    private async Task FeedbackAsync() => await Try(async () =>
+        _t = await Api.AddFeedbackAsync(Id, _rating, string.IsNullOrWhiteSpace(_feedbackComment) ? null : _feedbackComment));
+
+    private static string FormatSize(long bytes) =>
+        bytes < 1024 ? $"{bytes} B" : bytes < 1024 * 1024 ? $"{bytes / 1024.0:F1} KB" : $"{bytes / (1024.0 * 1024):F1} MB";
+}

@@ -1,0 +1,68 @@
+@page "/notifications"
+@inherits AppPage
+
+<PageTitle>Notifications — OGDCL</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>Notifications</h1>
+        <div class="page-sub">Ticket updates, visitor OTPs, and arrivals</div>
+    </div>
+    <div class="inline">
+        <button class="tab @(_unreadOnly ? "active" : "")" @onclick="ToggleFilter">Unread only</button>
+        <button class="btn btn-secondary btn-sm" @onclick="RefreshAsync">Refresh</button>
+    </div>
+</div>
+
+@if (Error is not null)
+{
+    <div class="alert alert-error">@Error</div>
+}
+
+<div class="card">
+    @if (_items.Count == 0 && !Loading)
+    {
+        <div class="empty">No notifications @(_unreadOnly ? "unread" : "yet").</div>
+    }
+    @foreach (var n in _items)
+    {
+        <div class="notif @(n.ReadAt is null ? "unread" : "")">
+            <div>
+                <div class="notif-title">@n.Title</div>
+                <div class="notif-body">@n.Body</div>
+            </div>
+            <div style="text-align:right">
+                <div class="notif-time">@n.CreatedAt.ToLocalTime().ToString("HH:mm dd MMM")</div>
+                @if (n.ReadAt is null)
+                {
+                    <button class="btn btn-sm btn-secondary" style="margin-top:6px" @onclick="@(() => MarkReadAsync(n.Id))">Mark read</button>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<NotificationDto> _items = [];
+    private bool _unreadOnly;
+
+    protected override Task LoadAsync() => RefreshAsync();
+
+    private async Task RefreshAsync()
+    {
+        _items = await Api.GetNotificationsAsync(_unreadOnly);
+        StateHasChanged();
+    }
+
+    private async Task ToggleFilter()
+    {
+        _unreadOnly = !_unreadOnly;
+        await Try(RefreshAsync);
+    }
+
+    private async Task MarkReadAsync(int id) => await Try(async () =>
+    {
+        await Api.MarkNotificationReadAsync(id);
+        await RefreshAsync();
+    });
+}

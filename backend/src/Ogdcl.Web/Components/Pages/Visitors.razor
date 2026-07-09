@@ -1,0 +1,152 @@
+@page "/visitors"
+@inherits AppPage
+
+<PageTitle>Visitors — OGDCL</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>Visitors</h1>
+        <div class="page-sub">Pre-register your guests; security receives the entry code</div>
+    </div>
+</div>
+
+@if (Error is not null)
+{
+    <div class="alert alert-error">@Error</div>
+}
+@if (_success is not null)
+{
+    <div class="alert alert-ok">@_success</div>
+}
+
+<div class="card" style="max-width:720px">
+    <h2>Register a visitor</h2>
+    <div class="form-row">
+        <div>
+            <label>Full name</label>
+            <input type="text" @bind="_name" placeholder="e.g. Ali Raza" />
+        </div>
+        <div>
+            <label>CNIC</label>
+            <input type="text" @bind="_cnic" placeholder="35202-1234567-1" />
+        </div>
+        <div>
+            <label>Contact number</label>
+            <input type="text" @bind="_contact" placeholder="0300-1234567" />
+        </div>
+        <div>
+            <label>Expected arrival</label>
+            <input type="datetime-local" @bind="_expected" />
+        </div>
+    </div>
+    <label>Purpose of visit</label>
+    <input type="text" @bind="_purpose" placeholder="e.g. Vendor meeting with IT" />
+
+    <label>Permitted zones</label>
+    @foreach (var z in _zones)
+    {
+        <div class="check">
+            <input type="checkbox" checked="@_selectedZones.Contains(z.Id)"
+                   @onchange="@(e => ToggleZone(z.Id, (bool)e.Value!))" />
+            <span>@z.Name @(z.IsRestricted ? "" : "")</span>
+            @if (z.IsRestricted)
+            {
+                <span class="badge badge-restricted">restricted</span>
+            }
+        </div>
+    }
+
+    <div style="margin-top:14px">
+        <button class="btn" disabled="@_busy" @onclick="RegisterAsync">@(_busy ? "Registering…" : "Register visitor")</button>
+    </div>
+</div>
+
+<div class="card">
+    <h2>My visits</h2>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr><th>Visitor</th><th>Purpose</th><th>Expected</th><th>Status</th><th>Card</th><th></th></tr>
+            </thead>
+            <tbody>
+                @if (_visits.Count == 0 && !Loading)
+                {
+                    <tr><td colspan="6" class="empty">No visits registered yet.</td></tr>
+                }
+                @foreach (var v in _visits)
+                {
+                    <tr>
+                        <td><strong>@v.VisitorName</strong><div class="hint">@v.Cnic</div></td>
+                        <td>@v.Purpose</td>
+                        <td>@v.ExpectedArrival.ToLocalTime().ToString("HH:mm dd MMM")</td>
+                        <td><span class="badge s-@v.Status.ToString().ToLower()">@v.Status</span></td>
+                        <td>@(v.CardUid ?? "—")</td>
+                        <td>
+                            @if (v.Status == VisitStatus.Registered)
+                            {
+                                <div class="inline">
+                                    <button class="btn btn-sm btn-secondary" @onclick="@(() => ResendAsync(v.Id))">Resend OTP</button>
+                                    <button class="btn btn-sm btn-danger" @onclick="@(() => CancelAsync(v.Id))">Cancel</button>
+                                </div>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private List<ZoneDto> _zones = [];
+    private List<VisitDto> _visits = [];
+    private readonly HashSet<int> _selectedZones = [];
+    private string _name = "";
+    private string _cnic = "";
+    private string _contact = "";
+    private string _purpose = "";
+    private DateTime _expected = DateTime.Now.AddHours(1);
+    private bool _busy;
+    private string? _success;
+
+    protected override async Task LoadAsync()
+    {
+        _zones = await Api.GetZonesAsync();
+        _visits = await Api.GetMyVisitsAsync();
+    }
+
+    private void ToggleZone(int zoneId, bool on)
+    {
+        if (on) _selectedZones.Add(zoneId);
+        else _selectedZones.Remove(zoneId);
+    }
+
+    private async Task RegisterAsync()
+    {
+        _busy = true;
+        _success = null;
+        await Try(async () =>
+        {
+            var visit = await Api.RegisterVisitAsync(new RegisterVisitRequest(
+                _name, _cnic, _contact, _purpose, _expected.ToUniversalTime(), _selectedZones.ToList()));
+            _success = $"{visit.VisitorName} registered. Security has been notified with the entry code.";
+            _name = _cnic = _contact = _purpose = "";
+            _selectedZones.Clear();
+            _visits = await Api.GetMyVisitsAsync();
+        });
+        _busy = false;
+    }
+
+    private async Task ResendAsync(int id) => await Try(async () =>
+    {
+        await Api.ResendOtpAsync(id);
+        _success = "A fresh OTP has been sent to security.";
+    });
+
+    private async Task CancelAsync(int id) => await Try(async () =>
+    {
+        await Api.CancelVisitAsync(id);
+        _success = "Visit cancelled.";
+        _visits = await Api.GetMyVisitsAsync();
+    });
+}

@@ -1,0 +1,79 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+@if (!_ready)
+{
+    <div class="boot">Loading…</div>
+}
+else if (!Auth.IsLoggedIn)
+{
+    @Body
+}
+else
+{
+    <div class="shell">
+        <aside class="sidebar">
+            <div class="brand">
+                <span class="brand-mark">OG</span>
+                <div>
+                    <div class="brand-name">OGDCL</div>
+                    <div class="brand-sub">Workflow Automation</div>
+                </div>
+            </div>
+
+            <nav class="nav">
+                <NavLink class="nav-link" href="/" Match="NavLinkMatch.All">Dashboard</NavLink>
+                <NavLink class="nav-link" href="/tickets">Help Desk</NavLink>
+                <NavLink class="nav-link" href="/visitors">Visitors</NavLink>
+                @if (Auth.IsSecurity)
+                {
+                    <NavLink class="nav-link" href="/gate">Gate Desk</NavLink>
+                }
+                <NavLink class="nav-link" href="/notifications">Notifications</NavLink>
+                @if (Auth.IsAdmin)
+                {
+                    <NavLink class="nav-link" href="/settings">Settings</NavLink>
+                }
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="user-chip">
+                    <div class="user-name">@Auth.User!.DisplayName</div>
+                    <div class="user-role">@Auth.User.Role @(Auth.User.Department is null ? "" : $"· {Auth.User.Department}")</div>
+                </div>
+                <button class="btn btn-ghost" @onclick="LogoutAsync">Sign out</button>
+            </div>
+        </aside>
+
+        <main class="main">@Body</main>
+    </div>
+}
+
+<div id="blazor-error-ui">
+    An unhandled error has occurred.
+    <a href="" class="reload">Reload</a>
+    <a class="dismiss">🗙</a>
+</div>
+
+@code {
+    private bool _ready;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Auth.Changed += OnAuthChanged;
+        await Auth.EnsureLoadedAsync();
+        _ready = true;
+    }
+
+    private void OnAuthChanged() => InvokeAsync(StateHasChanged);
+
+    private async Task LogoutAsync()
+    {
+        await Auth.SignOutAsync();
+        Nav.NavigateTo("/login");
+    }
+
+    public void Dispose() => Auth.Changed -= OnAuthChanged;
+}

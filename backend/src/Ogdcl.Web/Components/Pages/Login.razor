@@ -1,0 +1,86 @@
+@page "/login"
+@inject ApiClient Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>Sign in — OGDCL</PageTitle>
+
+<div class="login-wrap">
+    <div class="login-card">
+        <div class="login-brand">
+            <span class="brand-mark">OG</span>
+            <div class="login-title">OGDCL Workflow Automation</div>
+            <div class="login-sub">Sign in with your OGDCL credentials</div>
+        </div>
+
+        @if (_error is not null)
+        {
+            <div class="alert alert-error">@_error</div>
+        }
+
+        <label>Username</label>
+        <input type="text" @bind="_username" @bind:event="oninput" @onkeyup="OnKeyUp" placeholder="e.g. ayan" />
+
+        <label>Password</label>
+        <input type="password" @bind="_password" @bind:event="oninput" @onkeyup="OnKeyUp" />
+
+        <div style="margin-top:18px">
+            <button class="btn" style="width:100%" disabled="@_busy" @onclick="SignInAsync">
+                @(_busy ? "Signing in…" : "Sign in")
+            </button>
+        </div>
+
+        <div class="demo-creds">
+            Development accounts — admin: <code>admin / Admin@123</code>,
+            employee: <code>ayan / Employee@123</code>,
+            handler: <code>it.handler1 / Handler@123</code>,
+            guard: <code>guard1 / Guard@123</code>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string _username = "";
+    private string _password = "";
+    private string? _error;
+    private bool _busy;
+
+    protected override void OnInitialized()
+    {
+        if (Auth.IsLoggedIn)
+            Nav.NavigateTo("/");
+    }
+
+    private async Task OnKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await SignInAsync();
+    }
+
+    private async Task SignInAsync()
+    {
+        if (_busy || string.IsNullOrWhiteSpace(_username) || string.IsNullOrWhiteSpace(_password))
+            return;
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            var auth = await Api.LoginAsync(_username.Trim(), _password);
+            await Auth.SignInAsync(auth);
+            Nav.NavigateTo("/");
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Cannot reach the API server. Is it running on the configured port?";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

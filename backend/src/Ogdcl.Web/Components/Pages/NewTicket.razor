@@ -1,0 +1,61 @@
+@page "/tickets/new"
+@inherits AppPage
+
+<PageTitle>New complaint — OGDCL</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>Submit a complaint</h1>
+        <div class="page-sub">It will be routed to the right department automatically</div>
+    </div>
+</div>
+
+@if (Error is not null)
+{
+    <div class="alert alert-error">@Error</div>
+}
+
+<div class="card" style="max-width:640px">
+    <label>Category</label>
+    <select @bind="_categoryId">
+        <option value="0">Select a category…</option>
+        @foreach (var c in _categories)
+        {
+            <option value="@c.Id">@c.Name</option>
+        }
+    </select>
+
+    <label>Title</label>
+    <input type="text" @bind="_title" placeholder="Short summary of the problem" />
+
+    <label>Description</label>
+    <textarea @bind="_description" placeholder="Describe what happened, where, and since when"></textarea>
+
+    <div style="margin-top:16px" class="inline">
+        <button class="btn" disabled="@_busy" @onclick="SubmitAsync">@(_busy ? "Submitting…" : "Submit complaint")</button>
+        <a class="btn btn-secondary" href="/tickets">Cancel</a>
+    </div>
+    <p class="hint" style="margin-top:10px">Photo/file attachments are supported by the API and the upcoming mobile app.</p>
+</div>
+
+@code {
+    private List<CategoryDto> _categories = [];
+    private int _categoryId;
+    private string _title = "";
+    private string _description = "";
+    private bool _busy;
+
+    protected override async Task LoadAsync() => _categories = await Api.GetCategoriesAsync();
+
+    private async Task SubmitAsync()
+    {
+        if (_categoryId == 0) { Error = "Please pick a category."; return; }
+        _busy = true;
+        await Try(async () =>
+        {
+            var ticket = await Api.CreateTicketAsync(new CreateTicketRequest(_categoryId, _title, _description));
+            Nav.NavigateTo($"/tickets/{ticket.Id}");
+        });
+        _busy = false;
+    }
+}

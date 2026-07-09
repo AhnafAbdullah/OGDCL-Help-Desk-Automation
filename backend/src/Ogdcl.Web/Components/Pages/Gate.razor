@@ -1,0 +1,138 @@
+@page "/gate"
+@inherits AppPage
+
+<PageTitle>Gate Desk — OGDCL</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>Gate Desk</h1>
+        <div class="page-sub">Verify arrivals, issue RFID cards, check visitors out</div>
+    </div>
+    <button class="btn btn-secondary" @onclick="RefreshAsync">Refresh</button>
+</div>
+
+@if (Error is not null)
+{
+    <div class="alert alert-error">@Error</div>
+}
+@if (_success is not null)
+{
+    <div class="alert alert-ok">@_success</div>
+}
+
+<div class="card">
+    <h2>Expected visitors (@_pending.Count)</h2>
+    <p class="hint">Entry codes arrive in your <a href="/notifications">notifications</a>. Type the code to verify the visitor.</p>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr><th>Visitor</th><th>Host</th><th>Expected</th><th>Zones</th><th style="width:260px">Verify OTP</th></tr>
+            </thead>
+            <tbody>
+                @if (_pending.Count == 0 && !Loading)
+                {
+                    <tr><td colspan="5" class="empty">No visitors expected right now.</td></tr>
+                }
+                @foreach (var v in _pending)
+                {
+                    <tr>
+                        <td><strong>@v.VisitorName</strong><div class="hint">@v.Cnic</div></td>
+                        <td>@v.Host</td>
+                        <td>@v.ExpectedArrival.ToLocalTime().ToString("HH:mm dd MMM")</td>
+                        <td>@ZoneList(v)</td>
+                        <td>
+                            <div class="inline">
+                                <input type="text" @bind="_otp[v.Id]" placeholder="6-digit code" maxlength="6" />
+                                <button class="btn btn-sm" @onclick="@(() => VerifyAsync(v.Id))">Verify</button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card">
+    <h2>On site (@_active.Count)</h2>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr><th>Visitor</th><th>Host</th><th>Arrived</th><th>Zones</th><th style="width:300px">RFID card / check-out</th></tr>
+            </thead>
+            <tbody>
+                @if (_active.Count == 0 && !Loading)
+                {
+                    <tr><td colspan="5" class="empty">No visitors currently inside.</td></tr>
+                }
+                @foreach (var v in _active)
+                {
+                    <tr>
+                        <td><strong>@v.VisitorName</strong><div class="hint">@v.Cnic</div></td>
+                        <td>@v.Host</td>
+                        <td>@v.ArrivedAt?.ToLocalTime().ToString("HH:mm")</td>
+                        <td>@ZoneList(v)</td>
+                        <td>
+                            <div class="inline">
+                                @if (v.CardUid is null)
+                                {
+                                    <input type="text" @bind="_card[v.Id]" placeholder="Card UID" />
+                                    <button class="btn btn-sm" @onclick="@(() => IssueAsync(v.Id))">Issue card</button>
+                                }
+                                else
+                                {
+                                    <span class="badge s-arrived">@v.CardUid</span>
+                                }
+                                <button class="btn btn-sm btn-danger" @onclick="@(() => CloseAsync(v.Id))">Check out</button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private List<VisitDto> _pending = [];
+    private List<VisitDto> _active = [];
+    private readonly Dictionary<int, string> _otp = [];
+    private readonly Dictionary<int, string> _card = [];
+    private string? _success;
+
+    protected override Task LoadAsync() => RefreshAsync();
+
+    private async Task RefreshAsync()
+    {
+        _pending = await Api.GetPendingVisitsAsync();
+        _active = await Api.GetActiveVisitsAsync();
+        foreach (var v in _pending)
+            _otp.TryAdd(v.Id, "");
+        foreach (var v in _active)
+            _card.TryAdd(v.Id, "");
+    }
+
+    private static string ZoneList(VisitDto v) =>
+        v.Zones.Count == 0 ? "—" : string.Join(", ", v.Zones.Select(z => z.Name));
+
+    private async Task VerifyAsync(int id) => await Try(async () =>
+    {
+        var visit = await Api.VerifyOtpAsync(id, _otp.GetValueOrDefault(id, ""));
+        _success = $"{visit.VisitorName} verified — host has been notified. Issue an RFID card below.";
+        await RefreshAsync();
+    });
+
+    private async Task IssueAsync(int id) => await Try(async () =>
+    {
+        var visit = await Api.IssueCardAsync(id, _card.GetValueOrDefault(id, ""));
+        _success = $"Card {visit.CardUid} issued to {visit.VisitorName}.";
+        await RefreshAsync();
+    });
+
+    private async Task CloseAsync(int id) => await Try(async () =>
+    {
+        var visit = await Api.CloseVisitAsync(id);
+        _success = $"{visit.VisitorName} checked out. Card returned to the pool.";
+        await RefreshAsync();
+    });
+}

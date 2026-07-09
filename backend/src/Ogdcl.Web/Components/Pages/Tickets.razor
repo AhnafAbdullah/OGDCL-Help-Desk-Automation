@@ -1,0 +1,113 @@
+@page "/tickets"
+@inherits AppPage
+
+<PageTitle>Help Desk — OGDCL</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>Help Desk</h1>
+        <div class="page-sub">Complaints and their live status</div>
+    </div>
+    <a class="btn" href="/tickets/new">New complaint</a>
+</div>
+
+@if (Error is not null)
+{
+    <div class="alert alert-error">@Error</div>
+}
+
+<div class="tabs">
+    <button class="tab @(_tab == "mine" ? "active" : "")" @onclick="@(() => SwitchTab("mine"))">My complaints</button>
+    @if (Auth.IsHandler)
+    {
+        <button class="tab @(_tab == "assigned" ? "active" : "")" @onclick="@(() => SwitchTab("assigned"))">Assigned to me</button>
+    }
+    @if (Auth.IsAdmin)
+    {
+        <button class="tab @(_tab == "all" ? "active" : "")" @onclick="@(() => SwitchTab("all"))">All tickets</button>
+    }
+</div>
+
+@if (_tab == "all")
+{
+    <div class="card">
+        <div class="inline" style="max-width:420px">
+            <select @bind="_statusFilter">
+                <option value="">All statuses</option>
+                @foreach (var s in Enum.GetValues<TicketStatus>())
+                {
+                    <option value="@s">@s</option>
+                }
+            </select>
+            <button class="btn btn-sm btn-secondary" @onclick="LoadAllAsync">Apply</button>
+        </div>
+        <div class="hint" style="margin-top:6px">@_paged?.Total tickets match</div>
+    </div>
+}
+
+<div class="card">
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Ticket</th><th>Title</th><th>Category</th><th>Status</th><th>Priority</th><th>Assigned to</th><th>Updated</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Rows.Count == 0 && !Loading)
+                {
+                    <tr><td colspan="7" class="empty">No tickets here yet.</td></tr>
+                }
+                @foreach (var t in Rows)
+                {
+                    <tr class="clickable" @onclick="@(() => Nav.NavigateTo($"/tickets/{t.Id}"))">
+                        <td><strong>@t.TicketNumber</strong></td>
+                        <td>@t.Title</td>
+                        <td>@t.Category</td>
+                        <td><span class="badge s-@t.Status.ToString().ToLower()">@t.Status</span></td>
+                        <td><span class="badge p-@t.Priority.ToString().ToLower()">@t.Priority</span></td>
+                        <td>@(t.AssignedTo ?? "—")</td>
+                        <td>@t.UpdatedAt.ToLocalTime().ToString("HH:mm dd MMM")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private string _tab = "mine";
+    private string _statusFilter = "";
+    private List<TicketSummaryDto> _mine = [];
+    private List<TicketSummaryDto> _assigned = [];
+    private PagedResult<TicketSummaryDto>? _paged;
+
+    private List<TicketSummaryDto> Rows => _tab switch
+    {
+        "assigned" => _assigned,
+        "all" => _paged?.Items ?? [],
+        _ => _mine,
+    };
+
+    protected override async Task LoadAsync()
+    {
+        _mine = await Api.GetMyTicketsAsync();
+        if (Auth.User!.Role == UserRole.Handler)
+            _tab = "assigned";
+        if (Auth.IsHandler)
+            _assigned = await Api.GetAssignedTicketsAsync();
+    }
+
+    private async Task SwitchTab(string tab)
+    {
+        _tab = tab;
+        if (tab == "all" && _paged is null)
+            await LoadAllAsync();
+    }
+
+    private async Task LoadAllAsync() => await Try(async () =>
+    {
+        TicketStatus? status = string.IsNullOrEmpty(_statusFilter) ? null : Enum.Parse<TicketStatus>(_statusFilter);
+        _paged = await Api.SearchTicketsAsync(status, 1, 50);
+    });
+}

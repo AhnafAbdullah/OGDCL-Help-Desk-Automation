@@ -1,0 +1,19 @@
+# .NET
+bin/
+obj/
+*.user
+.vs/
+
+# Local dev artifacts
+*.db
+*.db-shm
+*.db-wal
+backend/src/Ogdcl.Api/storage/
+
+# IDE
+.idea/
+*.swp
+
+# OS
+Thumbs.db
+.DS_Store
