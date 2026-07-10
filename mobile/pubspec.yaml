@@ -1,0 +1,67 @@
+name: flutter_hdworkflow
+description: "OGDCL Help Desk mobile client — ticket submission, tracking, and resolution."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # State management
+  flutter_riverpod: ^2.6.1
+
+  # Routing
+  go_router: ^14.6.2
+
+  # Networking
+  dio: ^5.7.0
+
+  # Realtime notifications (SignalR hub)
+  signalr_netcore: ^1.3.7
+
+  # Secure token storage
+  flutter_secure_storage: ^9.2.2
+
+  # Date/number formatting
+  intl: ^0.19.0
+
+  # Attachments: pick, locate, and open files
+  file_picker: ^8.0.0
+  path_provider: ^2.1.5
+  open_filex: ^4.3.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+  # Generates launcher icons for android/ios/web/windows from assets/logo.png.
+  # Run `dart run flutter_launcher_icons` after `flutter pub get`.
+  flutter_launcher_icons: ^0.14.2
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/logo.png
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/logo.png"
+  min_sdk_android: 21
+  web:
+    generate: true
+    image_path: "assets/logo.png"
+    background_color: "#ffffff"
+    theme_color: "#1f4e5f"
+  windows:
+    generate: true
+    image_path: "assets/logo.png"
