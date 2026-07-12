@@ -17,18 +17,20 @@
 
 @if (Loading)
 {
-    <div class="hint">Loading…</div>
+    <Skeleton Variant="stats" Count="4" />
 }
 else
 {
     <div class="stat-grid">
         <div class="stat">
+            <div class="stat-icon"><Icon Name="ticket" /></div>
             <div class="stat-value">@_myOpenTickets</div>
             <div class="stat-label">My open complaints</div>
         </div>
         @if (Auth.User?.Role == UserRole.Handler)
         {
             <div class="stat">
+                <div class="stat-icon"><Icon Name="inbox" /></div>
                 <div class="stat-value">@_assigned.Count</div>
                 <div class="stat-label">Tickets in my queue</div>
             </div>
@@ -36,6 +38,7 @@ else
         @if (Auth.IsAdmin)
         {
             <div class="stat">
+                <div class="stat-icon"><Icon Name="grid" /></div>
                 <div class="stat-value">@_totalTickets</div>
                 <div class="stat-label">Tickets (all time)</div>
             </div>
@@ -43,10 +46,12 @@ else
         @if (Auth.IsSecurity)
         {
             <div class="stat">
+                <div class="stat-icon"><Icon Name="clock" /></div>
                 <div class="stat-value">@_pending.Count</div>
                 <div class="stat-label">Expected visitors</div>
             </div>
             <div class="stat">
+                <div class="stat-icon"><Icon Name="shield" /></div>
                 <div class="stat-value">@_active.Count</div>
                 <div class="stat-label">Visitors on site</div>
             </div>
@@ -54,11 +59,13 @@ else
         else
         {
             <div class="stat">
+                <div class="stat-icon"><Icon Name="users" /></div>
                 <div class="stat-value">@_myVisits.Count(v => v.Status is VisitStatus.Registered or VisitStatus.Arrived)</div>
                 <div class="stat-label">My upcoming/active visits</div>
             </div>
         }
         <div class="stat">
+            <div class="stat-icon"><Icon Name="bell" /></div>
             <div class="stat-value">@_unread.Count</div>
             <div class="stat-label">Unread notifications</div>
         </div>
@@ -67,11 +74,11 @@ else
     <div class="card">
         <h2>Quick actions</h2>
         <div class="inline" style="flex-wrap:wrap">
-            <a class="btn btn-sm" href="/tickets/new">Submit a complaint</a>
-            <a class="btn btn-sm btn-secondary" href="/visitors">Register a visitor</a>
+            <a class="btn btn-sm" href="/tickets/new"><Icon Name="plus" Size="16" /> Submit a complaint</a>
+            <a class="btn btn-sm btn-secondary" href="/visitors"><Icon Name="users" Size="16" /> Register a visitor</a>
             @if (Auth.IsSecurity)
             {
-                <a class="btn btn-sm btn-secondary" href="/gate">Open gate desk</a>
+                <a class="btn btn-sm btn-secondary" href="/gate"><Icon Name="shield" Size="16" /> Open gate desk</a>
             }
         </div>
     </div>

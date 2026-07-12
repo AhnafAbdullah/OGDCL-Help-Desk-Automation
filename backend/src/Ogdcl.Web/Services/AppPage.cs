@@ -41,6 +41,10 @@ public abstract class AppPage : ComponentBase
         }
         catch (ApiException ex) when (ex.StatusCode == 401)
         {
+            // The token was rejected (expired/rotated). Clear the whole session
+            // before redirecting — leaving it in place keeps the sidebar visible
+            // and makes the login page bounce straight back, causing a flicker loop.
+            await Auth.SignOutAsync();
             Nav.NavigateTo("/login");
         }
         catch (ApiException ex)

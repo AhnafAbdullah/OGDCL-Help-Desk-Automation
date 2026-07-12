@@ -2,6 +2,7 @@
 @implements IDisposable
 @inject AuthState Auth
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 @if (!_ready)
 {
@@ -9,41 +10,57 @@
 }
 else if (!Auth.IsLoggedIn)
 {
-    @Body
+    @* Only the login page may render without a session; any other route shows a
+       neutral splash while its redirect to /login runs, so no content flashes. *@
+    @if (IsLoginRoute)
+    {
+        @Body
+    }
+    else
+    {
+        <div class="boot">Redirecting to sign in…</div>
+    }
 }
 else
 {
     <div class="shell">
         <aside class="sidebar">
             <div class="brand">
-                <span class="brand-mark">OG</span>
+                <span class="brand-mark"><OgdclLogo Width="34" /></span>
                 <div>
                     <div class="brand-name">OGDCL</div>
-                    <div class="brand-sub">Workflow Automation</div>
+                    <div class="brand-sub">the energy · workflow automation</div>
                 </div>
             </div>
 
             <nav class="nav">
-                <NavLink class="nav-link" href="/" Match="NavLinkMatch.All">Dashboard</NavLink>
-                <NavLink class="nav-link" href="/tickets">Help Desk</NavLink>
-                <NavLink class="nav-link" href="/visitors">Visitors</NavLink>
+                <NavLink class="nav-link" href="/" Match="NavLinkMatch.All"><Icon Name="grid" /> Dashboard</NavLink>
+                <NavLink class="nav-link" href="/tickets"><Icon Name="ticket" /> Help Desk</NavLink>
+                <NavLink class="nav-link" href="/visitors"><Icon Name="users" /> Visitors</NavLink>
                 @if (Auth.IsSecurity)
                 {
-                    <NavLink class="nav-link" href="/gate">Gate Desk</NavLink>
+                    <NavLink class="nav-link" href="/gate"><Icon Name="shield" /> Gate Desk</NavLink>
                 }
-                <NavLink class="nav-link" href="/notifications">Notifications</NavLink>
+                <NavLink class="nav-link" href="/notifications"><Icon Name="bell" /> Notifications</NavLink>
                 @if (Auth.IsAdmin)
                 {
-                    <NavLink class="nav-link" href="/settings">Settings</NavLink>
+                    <NavLink class="nav-link" href="/settings"><Icon Name="gear" /> Settings</NavLink>
                 }
             </nav>
 
             <div class="sidebar-footer">
+                <button class="theme-toggle" @onclick="ToggleThemeAsync" title="Toggle light/dark theme">
+                    <Icon Name="@(_theme == "dark" ? "sun" : "moon")" Size="16" />
+                    @(_theme == "dark" ? "Light mode" : "Dark mode")
+                </button>
                 <div class="user-chip">
-                    <div class="user-name">@Auth.User!.DisplayName</div>
-                    <div class="user-role">@Auth.User.Role @(Auth.User.Department is null ? "" : $"· {Auth.User.Department}")</div>
+                    <div class="avatar">@Initials(Auth.User!.DisplayName)</div>
+                    <div>
+                        <div class="user-name">@Auth.User.DisplayName</div>
+                        <div class="user-role">@Auth.User.Role @(Auth.User.Department is null ? "" : $"· {Auth.User.Department}")</div>
+                    </div>
                 </div>
-                <button class="btn btn-ghost" @onclick="LogoutAsync">Sign out</button>
+                <button class="btn-signout" @onclick="LogoutAsync"><Icon Name="logout" Size="16" /> Sign out</button>
             </div>
         </aside>
 
@@ -59,15 +76,55 @@ else
 
 @code {
     private bool _ready;
+    private string _theme = "light";
+
+    private bool IsLoginRoute =>
+        new Uri(Nav.Uri).AbsolutePath.TrimEnd('/').EndsWith("/login", StringComparison.OrdinalIgnoreCase);
 
     protected override async Task OnInitializedAsync()
     {
         Auth.Changed += OnAuthChanged;
+        Nav.LocationChanged += OnLocationChanged;
         await Auth.EnsureLoadedAsync();
         _ready = true;
+        // The layout owns this redirect: when it shows the splash it does not
+        // render the page, so a page-level redirect would never run.
+        RedirectIfLoggedOut();
     }
 
-    private void OnAuthChanged() => InvokeAsync(StateHasChanged);
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Sync the toggle label with the theme the anti-FOUC script applied.
+            _theme = await JS.InvokeAsync<string>("ogdclTheme.get");
+            StateHasChanged();
+        }
+    }
+
+    private async Task ToggleThemeAsync()
+    {
+        _theme = await JS.InvokeAsync<string>("ogdclTheme.toggle");
+    }
+
+    private void RedirectIfLoggedOut()
+    {
+        if (_ready && !Auth.IsLoggedIn && !IsLoginRoute)
+            Nav.NavigateTo("/login");
+    }
+
+    private void OnAuthChanged() => InvokeAsync(() =>
+    {
+        RedirectIfLoggedOut();
+        StateHasChanged();
+    });
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e) =>
+        InvokeAsync(() =>
+        {
+            RedirectIfLoggedOut();
+            StateHasChanged();
+        });
 
     private async Task LogoutAsync()
     {
@@ -75,5 +132,17 @@ else
         Nav.NavigateTo("/login");
     }
 
-    public void Dispose() => Auth.Changed -= OnAuthChanged;
+    private static string Initials(string name)
+    {
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length == 0 ? "?"
+            : parts.Length == 1 ? parts[0][..1].ToUpper()
+            : (parts[0][0].ToString() + parts[^1][0]).ToUpper();
+    }
+
+    public void Dispose()
+    {
+        Auth.Changed -= OnAuthChanged;
+        Nav.LocationChanged -= OnLocationChanged;
+    }
 }

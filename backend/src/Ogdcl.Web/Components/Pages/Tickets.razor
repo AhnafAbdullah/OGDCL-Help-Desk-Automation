@@ -8,7 +8,7 @@
         <h1>Help Desk</h1>
         <div class="page-sub">Complaints and their live status</div>
     </div>
-    <a class="btn" href="/tickets/new">New complaint</a>
+    <a class="btn" href="/tickets/new"><Icon Name="plus" Size="16" /> New complaint</a>
 </div>
 
 @if (Error is not null)
@@ -54,6 +54,18 @@
                 </tr>
             </thead>
             <tbody>
+                @if (Loading)
+                {
+                    @for (var i = 0; i < 5; i++)
+                    {
+                        <tr>
+                            @for (var c = 0; c < 7; c++)
+                            {
+                                <td><div class="sk sk-line" style="width:@(c == 1 ? "80%" : "55%")"></div></td>
+                            }
+                        </tr>
+                    }
+                }
                 @if (Rows.Count == 0 && !Loading)
                 {
                     <tr><td colspan="7" class="empty">No tickets here yet.</td></tr>

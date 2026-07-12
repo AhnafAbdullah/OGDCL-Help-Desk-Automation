@@ -32,7 +32,7 @@
     <textarea @bind="_description" placeholder="Describe what happened, where, and since when"></textarea>
 
     <div style="margin-top:16px" class="inline">
-        <button class="btn" disabled="@_busy" @onclick="SubmitAsync">@(_busy ? "Submitting…" : "Submit complaint")</button>
+        <button class="btn" disabled="@_busy" @onclick="SubmitAsync"><Icon Name="check" Size="16" /> @(_busy ? "Submitting…" : "Submit complaint")</button>
         <a class="btn btn-secondary" href="/tickets">Cancel</a>
     </div>
     <p class="hint" style="margin-top:10px">Photo/file attachments are supported by the API and the upcoming mobile app.</p>

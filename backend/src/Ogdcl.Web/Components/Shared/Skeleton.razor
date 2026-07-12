@@ -1,0 +1,54 @@
+@* Loading placeholders that mirror the shape of the content being fetched. *@
+@if (Variant == "stats")
+{
+    <div class="stat-grid">
+        @for (var i = 0; i < Count; i++)
+        {
+            <div class="stat skeleton-card">
+                <div class="stat-icon"></div>
+                <div class="sk sk-lg"></div>
+                <div class="sk sk-sm"></div>
+            </div>
+        }
+    </div>
+}
+else if (Variant == "table")
+{
+    <div class="card">
+        <div class="table-wrap">
+            <table>
+                <tbody>
+                    @for (var r = 0; r < Count; r++)
+                    {
+                        <tr>
+                            @for (var c = 0; c < Columns; c++)
+                            {
+                                <td><div class="sk sk-line" style="width:@(ColWidth(c))"></div></td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+else
+{
+    <div class="card">
+        @for (var i = 0; i < Count; i++)
+        {
+            <div style="padding:10px 0">
+                <div class="sk sk-line" style="width:35%"></div>
+                <div class="sk sk-line" style="width:70%"></div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string Variant { get; set; } = "list"; // stats | table | list
+    [Parameter] public int Count { get; set; } = 4;
+    [Parameter] public int Columns { get; set; } = 5;
+
+    private string ColWidth(int c) => c == 0 ? "60%" : c % 2 == 0 ? "50%" : "80%";
+}

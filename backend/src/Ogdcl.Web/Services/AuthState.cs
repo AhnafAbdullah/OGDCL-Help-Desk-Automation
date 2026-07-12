@@ -4,8 +4,8 @@ using Ogdcl.Domain;
 
 namespace Ogdcl.Web.Services;
 
-/// <summary>Snapshot persisted to ProtectedSessionStorage so a page refresh keeps the session.</summary>
-public record AuthSnapshot(string Token, UserDto User);
+/// <summary>Snapshot persisted to ProtectedLocalStorage so a page refresh keeps the session.</summary>
+public record AuthSnapshot(string Token, UserDto User, DateTime ExpiresAtUtc);
 
 /// <summary>
 /// Per-circuit login state for the dashboard. The token is persisted in
@@ -48,13 +48,23 @@ public class AuthState
             var stored = await _storage.GetAsync<AuthSnapshot>(StorageKey);
             if (stored.Success && stored.Value is not null)
             {
-                Token = stored.Value.Token;
-                User = stored.Value.User;
+                // A token that is expired (or about to expire) must not be
+                // restored: it would render the app for a moment and then
+                // bounce to the login page on the first 401 — the flicker bug.
+                if (stored.Value.ExpiresAtUtc > DateTime.UtcNow.AddMinutes(1))
+                {
+                    Token = stored.Value.Token;
+                    User = stored.Value.User;
+                }
+                else
+                {
+                    await _storage.DeleteAsync(StorageKey);
+                }
             }
         }
         catch
         {
-            // JS interop unavailable (e.g. prerender) — treated as logged out.
+            // JS interop unavailable or an old/corrupt snapshot — treated as logged out.
         }
     }
 
@@ -63,7 +73,7 @@ public class AuthState
         Token = auth.AccessToken;
         User = auth.User;
         _restore = Task.CompletedTask; // session is now known; skip any storage read
-        await _storage.SetAsync(StorageKey, new AuthSnapshot(auth.AccessToken, auth.User));
+        await _storage.SetAsync(StorageKey, new AuthSnapshot(auth.AccessToken, auth.User, auth.ExpiresAtUtc));
         Changed?.Invoke();
     }
 
