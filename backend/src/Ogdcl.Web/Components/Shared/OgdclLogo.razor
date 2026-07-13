@@ -1,9 +1,8 @@
 @* OGDCL brand mark. The artwork is a real asset file at
-   wwwroot/assets/ogdcl-logo.jpg (served at /assets/ogdcl-logo.jpg). Drop your
-   JPG there and it updates everywhere this component is used (sidebar + login);
-   no code change needed. Until the JPG exists it falls back to the bundled SVG. *@
-<img class="ogdcl-mark" src="assets/ogdcl-logo.jpg" width="@Width" alt="OGDCL logo"
-     onerror="this.onerror=null; this.src='assets/ogdcl-logo.svg';" />
+   wwwroot/assets/ogdcl-logo.jpg (served at /assets/ogdcl-logo.jpg). Replace that
+   file to update the logo everywhere this component is used (sidebar + login);
+   no code change needed. *@
+<img class="ogdcl-mark" src="assets/ogdcl-logo.jpg" width="@Width" alt="OGDCL logo" />
 
 @code {
     [Parameter] public int Width { get; set; } = 96;
