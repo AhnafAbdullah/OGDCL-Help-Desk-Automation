@@ -112,7 +112,7 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 .icon { flex-shrink: 0; vertical-align: middle; }
-.ogdcl-mark { display: block; }
+.ogdcl-mark { display: block; height: auto; }
 
 .boot { display: grid; place-items: center; height: 100vh; color: var(--ink-soft); }
 
@@ -138,8 +138,8 @@ a:hover { text-decoration: underline; }
     place-items: center;
     width: 46px; height: 46px;
     border-radius: 12px;
-    background: linear-gradient(135deg, #1c86ec, #0f62c4);
-    box-shadow: 0 4px 14px rgba(23, 120, 224, 0.45);
+    background: #ffffff;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
     padding: 6px;
 }
 .brand-name { font-weight: 700; letter-spacing: 0.02em; color: #fff; font-size: 0.98rem; }
@@ -320,15 +320,16 @@ textarea { min-height: 96px; resize: vertical; }
 }
 .login-brand { text-align: center; margin-bottom: 22px; }
 .login-logo {
-    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
     margin: 0 auto 16px;
-    padding: 22px 26px 16px;
+    padding: 22px 30px 18px;
     border-radius: var(--r);
-    background: linear-gradient(135deg, #1c86ec, #0f62c4);
-    box-shadow: 0 10px 26px rgba(23, 120, 224, 0.4);
+    background: #ffffff;
+    border: 1px solid var(--border);
+    box-shadow: 0 10px 26px rgba(14, 28, 43, 0.12);
     width: fit-content;
 }
-.login-tagline { color: #ffffff; font-size: 0.86rem; font-weight: 500; letter-spacing: 0.02em; }
+.login-tagline { color: var(--brand-2); font-size: 0.86rem; font-weight: 600; letter-spacing: 0.04em; }
 .login-title { font-weight: 700; font-size: 1.2rem; letter-spacing: -0.01em; }
 .login-sub { color: var(--ink-soft); font-size: 0.86rem; margin-top: 2px; }
 .demo-creds { margin-top: 18px; padding: 13px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm); font-size: 0.78rem; color: var(--ink-soft); line-height: 1.7; }

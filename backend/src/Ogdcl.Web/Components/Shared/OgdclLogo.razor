@@ -1,20 +1,10 @@
-@* OGDCL "ogdc" brand mark, recreated as inline SVG from the corporate logo
-   (mint glyphs; place on blue or dark surfaces). Vector, no external assets —
-   safe for OGDCL's intranet deployment. *@
-<svg class="ogdcl-mark" width="@Width" height="@((int)(Width * 160.0 / 276))" viewBox="0 0 276 160"
-     fill="none" stroke="@Color" stroke-width="22" stroke-linecap="round" aria-label="OGDCL logo">
-    @* o *@
-    <circle cx="45" cy="65" r="30" />
-    @* g — ring with bowl descender *@
-    <circle cx="120" cy="65" r="30" />
-    <path d="M 90 108 A 30 30 0 0 0 150 108" />
-    @* d — right-bulging crescent *@
-    <path d="M 185 35 A 30 30 0 0 1 185 95" />
-    @* c — left-bulging crescent *@
-    <path d="M 257 35 A 30 30 0 0 0 257 95" />
-</svg>
+@* OGDCL brand mark. The artwork is a real asset file at
+   wwwroot/assets/ogdcl-logo.jpg (served at /assets/ogdcl-logo.jpg). Drop your
+   JPG there and it updates everywhere this component is used (sidebar + login);
+   no code change needed. Until the JPG exists it falls back to the bundled SVG. *@
+<img class="ogdcl-mark" src="assets/ogdcl-logo.jpg" width="@Width" alt="OGDCL logo"
+     onerror="this.onerror=null; this.src='assets/ogdcl-logo.svg';" />
 
 @code {
     [Parameter] public int Width { get; set; } = 96;
-    [Parameter] public string Color { get; set; } = "#2ED9A6";
 }
