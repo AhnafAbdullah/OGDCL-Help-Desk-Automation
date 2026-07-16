@@ -14,7 +14,7 @@ The scope document (`OGDCL_Proposal_.docx`) and the phased implementation plan
 |---|---|
 | Backend API (.NET 8, Clean Architecture) | ✅ Implemented and verified |
 | Authentication (JWT + provider-switchable AD/dev) | ✅ Implemented |
-| Help Desk module (tickets, auto-assignment, feedback, attachments) | ✅ Implemented |
+| Help Desk module (severity, urgent approval, handler accept/reject, escalation, attachments) | ✅ Implemented and verified |
 | Visitor Entry module (pre-registration, OTP, RFID card issue/return) | ✅ Implemented (software side) |
 | In-app notifications (SignalR + persisted) | ✅ Implemented |
 | Blazor Server web dashboard (Phase 2) | ✅ Implemented and verified in-browser |
@@ -41,6 +41,11 @@ tests/
 Requires the .NET 8 SDK. The dashboard talks to the API, so run **both** (two
 terminals). The API must be on port 5080 (the web app's default `Api:BaseUrl`).
 
+**Easiest — double-click the launchers** in this folder (they work from any
+directory): **`run-api.cmd`** first, then **`run-web.cmd`**.
+
+Or by hand, from `backend/` (relative paths need that working directory):
+
 ```bash
 cd backend
 # terminal 1 — API
@@ -56,22 +61,50 @@ account below. Swagger UI for the raw API is at http://localhost:5080/swagger
 On first run the API creates `ogdcl_dev.db` (SQLite) and seeds demo data.
 Delete the file to reset. Tests: `dotnet test`.
 
+### How a complaint flows
+
+1. An **employee** submits it with a **severity** (Low / Medium / Urgent) and
+   optional file or image attachments. Only employees may raise complaints —
+   admins must sign in with an employee account to do so.
+2. **Urgent** complaints go to **PendingApproval** and must be approved by that
+   department's floor admin (or a super admin) before handlers can see them.
+   Everything else opens immediately.
+3. Complaints are **never auto-assigned**. They sit in the department's queue;
+   any handler there can **Accept** or **Pass on**. The system shows the
+   **suggested handler** (least-loaded, skipping those who passed) to handlers
+   and admins as advice only.
+4. The accepting handler works it: Assigned → In Progress → Resolved. The author
+   closes it and rates the service.
+5. **Anti-starvation:** every waiting complaint runs a severity-based timer. When
+   it elapses the complaint is auto-escalated one step (Low → Medium → Urgent →
+   Critical), flagged **⚠ Overdue**, the timer restarts, and handlers/admins are
+   alerted. Critical is only ever reached this way. Tune the budgets under
+   `Escalation` in `appsettings.json` (dev defaults are short so it is
+   demonstrable).
+
 ### What each role sees in the dashboard
 
-- **Employee** — submit complaints, track their status, register visitors.
-- **Handler** — a queue of auto-assigned tickets with status actions.
+- **Employee** — submit complaints (severity + attachments), track them, register visitors.
+- **Handler** — an **Available** queue for their department (Accept / Pass on) and **Assigned to me**.
 - **Security** — the Gate Desk: verify visitor OTPs, issue/return RFID cards.
-- **Admin** — everything, plus Settings (routing rules, categories, zones) and
-  an all-tickets view.
+- **Floor Admin** (per department) — approves urgent complaints, and sees the
+  complaints and handler performance **of their own department only**.
+- **Super Admin** — the same across **all** departments, plus global Settings
+  (routing rules, categories, zones). Neither admin can raise complaints.
 
 ### Seeded dev accounts
 
 | Username | Password | Role |
 |---|---|---|
-| `admin` | `Admin@123` | Admin |
+| `admin` | `Admin@123` | Super Admin (all departments + settings) |
+| `it.admin`, `hr.admin`, `fac.admin`, `maint.admin`, `civil.admin` | `Floor@123` | Floor Admin (own department only) |
 | `ayan`, `umer`, `ibrahim` | `Employee@123` | Employee |
 | `it.handler1`, `it.handler2`, `maint.handler1`, `hr.handler1`, `fac.handler1`, `civil.handler1` | `Handler@123` | Handler (per department) |
 | `guard1`, `guard2` | `Guard@123` | Security |
+
+> The schema changed with this feature. If you have an old `ogdcl_dev.db`, delete
+> it (in `src/Ogdcl.Api`) so it is recreated and reseeded — `EnsureCreated` does
+> not migrate an existing database.
 
 ## Configuration switches (`src/Ogdcl.Api/appsettings.json`)
 

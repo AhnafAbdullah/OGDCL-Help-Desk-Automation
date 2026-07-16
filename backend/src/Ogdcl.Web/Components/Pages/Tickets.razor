@@ -8,7 +8,10 @@
         <h1>Help Desk</h1>
         <div class="page-sub">Complaints and their live status</div>
     </div>
-    <a class="btn" href="/tickets/new"><Icon Name="plus" Size="16" /> New complaint</a>
+    @if (Auth.IsEmployee)
+    {
+        <a class="btn" href="/tickets/new"><Icon Name="plus" Size="16" /> New complaint</a>
+    }
 </div>
 
 @if (Error is not null)
@@ -17,109 +20,177 @@
 }
 
 <div class="tabs">
-    <button class="tab @(_tab == "mine" ? "active" : "")" @onclick="@(() => SwitchTab("mine"))">My complaints</button>
+    @if (Auth.IsEmployee)
+    {
+        <button class="tab @Cls("mine")" @onclick="@(() => SwitchTab("mine"))">My complaints</button>
+    }
     @if (Auth.IsHandler)
     {
-        <button class="tab @(_tab == "assigned" ? "active" : "")" @onclick="@(() => SwitchTab("assigned"))">Assigned to me</button>
+        <button class="tab @Cls("available")" @onclick="@(() => SwitchTab("available"))">Available (@_available.Count)</button>
+        <button class="tab @Cls("assigned")" @onclick="@(() => SwitchTab("assigned"))">Assigned to me</button>
     }
     @if (Auth.IsAdmin)
     {
-        <button class="tab @(_tab == "all" ? "active" : "")" @onclick="@(() => SwitchTab("all"))">All tickets</button>
+        <button class="tab @Cls("approvals")" @onclick="@(() => SwitchTab("approvals"))">Approvals (@_approvals.Count)</button>
+        <button class="tab @Cls("all")" @onclick="@(() => SwitchTab("all"))">All complaints</button>
+        <button class="tab @Cls("performance")" @onclick="@(() => SwitchTab("performance"))">Handler performance</button>
     }
 </div>
 
-@if (_tab == "all")
+@if (_tab == "performance")
 {
     <div class="card">
-        <div class="inline" style="max-width:420px">
-            <select @bind="_statusFilter">
-                <option value="">All statuses</option>
-                @foreach (var s in Enum.GetValues<TicketStatus>())
-                {
-                    <option value="@s">@s</option>
-                }
-            </select>
-            <button class="btn btn-sm btn-secondary" @onclick="LoadAllAsync">Apply</button>
-        </div>
-        <div class="hint" style="margin-top:6px">@_paged?.Total tickets match</div>
-    </div>
-}
-
-<div class="card">
-    <div class="table-wrap">
-        <table>
-            <thead>
-                <tr>
-                    <th>Ticket</th><th>Title</th><th>Category</th><th>Status</th><th>Priority</th><th>Assigned to</th><th>Updated</th>
-                </tr>
-            </thead>
-            <tbody>
-                @if (Loading)
-                {
-                    @for (var i = 0; i < 5; i++)
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>Handler</th><th>Department</th><th>Solved</th><th>Closed</th><th>Active</th></tr></thead>
+                <tbody>
+                    @if (_stats.Count == 0 && !Loading)
+                    {
+                        <tr><td colspan="5" class="empty">No handlers to show.</td></tr>
+                    }
+                    @foreach (var s in _stats)
                     {
                         <tr>
-                            @for (var c = 0; c < 7; c++)
-                            {
-                                <td><div class="sk sk-line" style="width:@(c == 1 ? "80%" : "55%")"></div></td>
-                            }
+                            <td><strong>@s.Handler</strong></td>
+                            <td>@s.Department</td>
+                            <td><span class="badge s-resolved nodot">@s.Solved</span></td>
+                            <td><span class="badge s-closed nodot">@s.Closed</span></td>
+                            <td><span class="badge s-inprogress nodot">@s.Active</span></td>
                         </tr>
                     }
-                }
-                @if (Rows.Count == 0 && !Loading)
-                {
-                    <tr><td colspan="7" class="empty">No tickets here yet.</td></tr>
-                }
-                @foreach (var t in Rows)
-                {
-                    <tr class="clickable" @onclick="@(() => Nav.NavigateTo($"/tickets/{t.Id}"))">
-                        <td><strong>@t.TicketNumber</strong></td>
-                        <td>@t.Title</td>
-                        <td>@t.Category</td>
-                        <td><span class="badge s-@t.Status.ToString().ToLower()">@t.Status</span></td>
-                        <td><span class="badge p-@t.Priority.ToString().ToLower()">@t.Priority</span></td>
-                        <td>@(t.AssignedTo ?? "—")</td>
-                        <td>@t.UpdatedAt.ToLocalTime().ToString("HH:mm dd MMM")</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+                </tbody>
+            </table>
+        </div>
+        <p class="hint" style="margin-top:8px">"Solved" counts complaints this handler resolved or closed@(Auth.IsFloorAdmin ? " in your department." : " across all departments.")</p>
     </div>
-</div>
+}
+else
+{
+    @if (_tab == "all")
+    {
+        <div class="card">
+            <div class="inline" style="max-width:420px">
+                <select @bind="_statusFilter">
+                    <option value="">All statuses</option>
+                    @foreach (var s in Enum.GetValues<TicketStatus>())
+                    {
+                        <option value="@s">@Pretty(s)</option>
+                    }
+                </select>
+                <button class="btn btn-sm btn-secondary" @onclick="LoadAllAsync">Apply</button>
+            </div>
+            <div class="hint" style="margin-top:6px">@_paged?.Total complaints match</div>
+        </div>
+    }
+
+    <div class="card">
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr><th>Ticket</th><th>Title</th><th>Category</th><th>Status</th><th>Severity</th><th>Assigned to</th><th>Updated</th></tr>
+                </thead>
+                <tbody>
+                    @if (Loading)
+                    {
+                        @for (var i = 0; i < 5; i++)
+                        {
+                            <tr>@for (var c = 0; c < 7; c++) { <td><div class="sk sk-line" style="width:@(c == 1 ? "80%" : "55%")"></div></td> }</tr>
+                        }
+                    }
+                    @if (Rows.Count == 0 && !Loading)
+                    {
+                        <tr><td colspan="7" class="empty">Nothing here right now.</td></tr>
+                    }
+                    @foreach (var t in Rows)
+                    {
+                        <tr class="clickable @(t.IsOverdue ? "row-overdue" : "")" @onclick="@(() => Nav.NavigateTo($"/tickets/{t.Id}"))">
+                            <td><strong>@t.TicketNumber</strong></td>
+                            <td>@t.Title</td>
+                            <td>@t.Category</td>
+                            <td>
+                                <span class="badge s-@t.Status.ToString().ToLower()">@Pretty(t.Status)</span>
+                                @if (t.IsOverdue)
+                                {
+                                    <span class="badge badge-overdue" title="Overdue — auto-escalated">Late</span>
+                                }
+                            </td>
+                            <td><span class="badge p-@t.Severity.ToString().ToLower()">@t.Severity</span></td>
+                            <td>@(t.AssignedTo ?? "—")</td>
+                            <td>@t.UpdatedAt.ToLocalTime().ToString("HH:mm dd MMM")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
 
 @code {
     private string _tab = "mine";
     private string _statusFilter = "";
     private List<TicketSummaryDto> _mine = [];
+    private List<TicketSummaryDto> _available = [];
     private List<TicketSummaryDto> _assigned = [];
+    private List<TicketSummaryDto> _approvals = [];
+    private List<HandlerStatDto> _stats = [];
     private PagedResult<TicketSummaryDto>? _paged;
 
     private List<TicketSummaryDto> Rows => _tab switch
     {
+        "available" => _available,
         "assigned" => _assigned,
+        "approvals" => _approvals,
         "all" => _paged?.Items ?? [],
         _ => _mine,
     };
 
+    private string Cls(string tab) => _tab == tab ? "active" : "";
+
     protected override async Task LoadAsync()
     {
-        _mine = await Api.GetMyTicketsAsync();
-        if (Auth.User!.Role == UserRole.Handler)
-            _tab = "assigned";
+        if (Auth.IsEmployee)
+        {
+            _mine = await Api.GetMyTicketsAsync();
+            _tab = "mine";
+        }
         if (Auth.IsHandler)
+        {
+            _available = await Api.GetAvailableTicketsAsync();
             _assigned = await Api.GetAssignedTicketsAsync();
+            _tab = "available";
+        }
+        if (Auth.IsAdmin)
+        {
+            _approvals = await Api.GetPendingApprovalsAsync();
+            _tab = _approvals.Count > 0 ? "approvals" : "all";
+            if (_tab == "all") await LoadAllAsync();
+        }
     }
 
     private async Task SwitchTab(string tab)
     {
         _tab = tab;
-        if (tab == "all" && _paged is null)
-            await LoadAllAsync();
+        await Try(async () =>
+        {
+            if (tab == "all" && _paged is null) await LoadAllInternalAsync();
+            else if (tab == "performance" && _stats.Count == 0) _stats = await Api.GetHandlerStatsAsync();
+            else if (tab == "available") _available = await Api.GetAvailableTicketsAsync();
+            else if (tab == "approvals") _approvals = await Api.GetPendingApprovalsAsync();
+        });
     }
 
-    private async Task LoadAllAsync() => await Try(async () =>
+    private async Task LoadAllAsync() => await Try(LoadAllInternalAsync);
+
+    private async Task LoadAllInternalAsync()
     {
         TicketStatus? status = string.IsNullOrEmpty(_statusFilter) ? null : Enum.Parse<TicketStatus>(_statusFilter);
         _paged = await Api.SearchTicketsAsync(status, 1, 50);
-    });
+    }
+
+    private static string Pretty(TicketStatus s) => s switch
+    {
+        TicketStatus.PendingApproval => "Pending approval",
+        TicketStatus.InProgress => "In progress",
+        _ => s.ToString(),
+    };
 }

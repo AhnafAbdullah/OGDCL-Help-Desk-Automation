@@ -28,7 +28,7 @@ public class ZonesController : BaseApiController
             .ToListAsync(ct);
 
     [HttpPost]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "SuperAdmin")]
     public async Task<ZoneDto> Create(CreateZoneRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Name))

@@ -75,9 +75,13 @@ builder.Services
         {
             OnMessageReceived = context =>
             {
+                // SignalR websockets and browser file-download links (plain <a>
+                // tags can't set an Authorization header) carry the JWT as a
+                // query parameter instead.
                 var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
                 if (!string.IsNullOrEmpty(accessToken) &&
-                    context.HttpContext.Request.Path.StartsWithSegments("/hubs"))
+                    (path.StartsWithSegments("/hubs") || path.Value?.Contains("/attachments/") == true))
                 {
                     context.Token = accessToken;
                 }

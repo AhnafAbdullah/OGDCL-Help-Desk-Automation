@@ -16,6 +16,7 @@ public class AppDbContext : DbContext, IAppDbContext
     public DbSet<Ticket> Tickets => Set<Ticket>();
     public DbSet<TicketAttachment> TicketAttachments => Set<TicketAttachment>();
     public DbSet<TicketStatusHistory> TicketStatusHistory => Set<TicketStatusHistory>();
+    public DbSet<TicketRejection> TicketRejections => Set<TicketRejection>();
     public DbSet<TicketFeedback> TicketFeedback => Set<TicketFeedback>();
     public DbSet<Visitor> Visitors => Set<Visitor>();
     public DbSet<VisitRequest> VisitRequests => Set<VisitRequest>();
@@ -57,7 +58,16 @@ public class AppDbContext : DbContext, IAppDbContext
 
         modelBuilder.Entity<TicketStatusHistory>(e =>
         {
+            // ChangedById is nullable: system actions (auto-escalation) have no user.
             e.HasOne(x => x.ChangedBy).WithMany().HasForeignKey(x => x.ChangedById).OnDelete(DeleteBehavior.Restrict);
+            e.HasQueryFilter(x => !x.Ticket.IsDeleted);
+        });
+
+        modelBuilder.Entity<TicketRejection>(e =>
+        {
+            e.HasIndex(x => new { x.TicketId, x.HandlerId }).IsUnique();
+            e.HasOne(x => x.Ticket).WithMany(t => t.Rejections).HasForeignKey(x => x.TicketId);
+            e.HasOne(x => x.Handler).WithMany().HasForeignKey(x => x.HandlerId).OnDelete(DeleteBehavior.Restrict);
             e.HasQueryFilter(x => !x.Ticket.IsDeleted);
         });
 

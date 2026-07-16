@@ -24,12 +24,12 @@ public class VisitsController : BaseApiController
         await _visits.GetMineAsync(UserId, ct);
 
     [HttpGet("pending")]
-    [Authorize(Roles = "Security,Admin")]
+    [Authorize(Roles = "Security,SuperAdmin")]
     public async Task<List<VisitDto>> Pending(CancellationToken ct) =>
         await _visits.GetPendingAsync(ct);
 
     [HttpGet("active")]
-    [Authorize(Roles = "Security,Admin")]
+    [Authorize(Roles = "Security,SuperAdmin")]
     public async Task<List<VisitDto>> Active(CancellationToken ct) =>
         await _visits.GetActiveAsync(ct);
 
@@ -38,7 +38,7 @@ public class VisitsController : BaseApiController
         await _visits.GetByIdAsync(id, UserId, ct);
 
     [HttpPost("{id:int}/verify-otp")]
-    [Authorize(Roles = "Security,Admin")]
+    [Authorize(Roles = "Security,SuperAdmin")]
     public async Task<VisitDto> VerifyOtp(int id, VerifyOtpRequest request, CancellationToken ct) =>
         await _visits.VerifyOtpAsync(id, UserId, request, ct);
 
@@ -47,12 +47,12 @@ public class VisitsController : BaseApiController
         await _visits.ResendOtpAsync(id, UserId, ct);
 
     [HttpPost("{id:int}/issue-card")]
-    [Authorize(Roles = "Security,Admin")]
+    [Authorize(Roles = "Security,SuperAdmin")]
     public async Task<VisitDto> IssueCard(int id, IssueCardRequest request, CancellationToken ct) =>
         await _visits.IssueCardAsync(id, UserId, request, ct);
 
     [HttpPost("{id:int}/close")]
-    [Authorize(Roles = "Security,Admin")]
+    [Authorize(Roles = "Security,SuperAdmin")]
     public async Task<VisitDto> Close(int id, CancellationToken ct) =>
         await _visits.CloseAsync(id, UserId, ct);
 

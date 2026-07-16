@@ -13,6 +13,7 @@ public interface IAppDbContext
     DbSet<Ticket> Tickets { get; }
     DbSet<TicketAttachment> TicketAttachments { get; }
     DbSet<TicketStatusHistory> TicketStatusHistory { get; }
+    DbSet<TicketRejection> TicketRejections { get; }
     DbSet<TicketFeedback> TicketFeedback { get; }
     DbSet<Visitor> Visitors { get; }
     DbSet<VisitRequest> VisitRequests { get; }

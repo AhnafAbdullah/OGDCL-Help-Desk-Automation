@@ -15,9 +15,11 @@ public record UpsertAssignmentRuleRequest(int CategoryId, int DepartmentId, Tick
 public record CreateCategoryRequest(string Name);
 
 [Route("api/admin")]
-[Authorize(Roles = "Admin")]
+[Authorize(Roles = "FloorAdmin,SuperAdmin")]
 public class AdminController : BaseApiController
 {
+    private const string SuperOnly = "SuperAdmin";
+
     private readonly IAppDbContext _db;
     private readonly TicketService _tickets;
 
@@ -32,10 +34,14 @@ public class AdminController : BaseApiController
         await _db.Departments.OrderBy(d => d.Name)
             .Select(d => new DepartmentDto(d.Id, d.Name)).ToListAsync(ct);
 
+    // Floor admins only see users within their own department.
     [HttpGet("users")]
     public async Task<List<AdminUserDto>> Users([FromQuery] UserRole? role, CancellationToken ct)
     {
+        var me = await _db.Users.FirstAsync(u => u.Id == UserId, ct);
         var query = _db.Users.Include(u => u.Department).AsQueryable();
+        if (me.Role == UserRole.FloorAdmin)
+            query = query.Where(u => u.DepartmentId == me.DepartmentId);
         if (role is not null)
             query = query.Where(u => u.Role == role);
         return await query.OrderBy(u => u.Username)
@@ -47,7 +53,11 @@ public class AdminController : BaseApiController
     public async Task<PagedResult<TicketSummaryDto>> Tickets(
         [FromQuery] TicketStatus? status, [FromQuery] int? categoryId, [FromQuery] int? departmentId,
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default) =>
-        await _tickets.SearchAsync(status, categoryId, departmentId, page, pageSize, ct);
+        await _tickets.SearchForAdminAsync(UserId, status, categoryId, departmentId, page, pageSize, ct);
+
+    [HttpGet("handler-stats")]
+    public async Task<List<HandlerStatDto>> HandlerStats(CancellationToken ct) =>
+        await _tickets.GetHandlerStatsAsync(UserId, ct);
 
     [HttpGet("assignment-rules")]
     public async Task<List<AssignmentRuleDto>> AssignmentRules(CancellationToken ct) =>
@@ -57,7 +67,9 @@ public class AdminController : BaseApiController
             .Select(r => new AssignmentRuleDto(r.Id, r.CategoryId, r.Category.Name, r.DepartmentId, r.Department.Name, r.DefaultPriority))
             .ToListAsync(ct);
 
+    // Global configuration is super-admin only.
     [HttpPost("assignment-rules")]
+    [Authorize(Roles = SuperOnly)]
     public async Task<AssignmentRuleDto> UpsertAssignmentRule(UpsertAssignmentRuleRequest request, CancellationToken ct)
     {
         var category = await _db.ComplaintCategories.FirstOrDefaultAsync(c => c.Id == request.CategoryId, ct)
@@ -79,6 +91,7 @@ public class AdminController : BaseApiController
     }
 
     [HttpPost("categories")]
+    [Authorize(Roles = SuperOnly)]
     public async Task<CategoryDto> CreateCategory(CreateCategoryRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Name))

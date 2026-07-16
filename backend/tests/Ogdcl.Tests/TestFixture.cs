@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Ogdcl.Application.Files;
 using Ogdcl.Application.Notifications;
+using Ogdcl.Application.Tickets;
 using Ogdcl.Application.Visits;
 using Ogdcl.Domain;
 using Ogdcl.Domain.Entities;
@@ -67,6 +68,19 @@ public sealed class TestFixture : IDisposable
     public TestTimeProvider Time { get; } = new();
     public SpyOtpStore OtpStore { get; }
     public NotificationService Notifier { get; }
+    public EscalationOptions Escalation { get; } = new()
+    {
+        ThresholdMinutes = new()
+        {
+            [TicketPriority.Low] = 10,
+            [TicketPriority.Medium] = 6,
+            [TicketPriority.Urgent] = 3,
+            [TicketPriority.Critical] = 3,
+        },
+    };
+
+    /// <summary>A ticket service wired to the fixture's clock and escalation options.</summary>
+    public TicketService Tickets() => new(Db, Notifier, new NullFileStorage(), Time, Escalation);
 
     // Seeded fixture data
     public Department It = null!;
@@ -76,7 +90,9 @@ public sealed class TestFixture : IDisposable
     public User Handler2 = null!;
     public User HrHandler = null!;
     public User Guard = null!;
-    public User Admin = null!;
+    public User SuperAdmin = null!;
+    public User ItFloorAdmin = null!;
+    public User HrFloorAdmin = null!;
     public ComplaintCategory ItCategory = null!;
     public ComplaintCategory UnroutedCategory = null!;
     public Zone Lobby = null!;
@@ -109,7 +125,9 @@ public sealed class TestFixture : IDisposable
         Handler2 = new User { Username = "handler2", DisplayName = "Handler Two", Role = UserRole.Handler, Department = It };
         HrHandler = new User { Username = "hrhandler", DisplayName = "HR Handler", Role = UserRole.Handler, Department = Hr };
         Guard = new User { Username = "guard", DisplayName = "Gate Guard", Role = UserRole.Security };
-        Admin = new User { Username = "admin", DisplayName = "Admin", Role = UserRole.Admin };
+        SuperAdmin = new User { Username = "admin", DisplayName = "Super Admin", Role = UserRole.SuperAdmin };
+        ItFloorAdmin = new User { Username = "it.admin", DisplayName = "IT Floor Admin", Role = UserRole.FloorAdmin, Department = It };
+        HrFloorAdmin = new User { Username = "hr.admin", DisplayName = "HR Floor Admin", Role = UserRole.FloorAdmin, Department = Hr };
 
         ItCategory = new ComplaintCategory { Name = "IT Support" };
         UnroutedCategory = new ComplaintCategory { Name = "General" };
@@ -117,9 +135,10 @@ public sealed class TestFixture : IDisposable
         Lobby = new Zone { Name = "Lobby" };
         ServerRoom = new Zone { Name = "Server Room", IsRestricted = true };
 
-        Db.AddRange(It, Hr, Employee, Handler1, Handler2, HrHandler, Guard, Admin,
+        Db.AddRange(It, Hr, Employee, Handler1, Handler2, HrHandler, Guard,
+            SuperAdmin, ItFloorAdmin, HrFloorAdmin,
             ItCategory, UnroutedCategory, Lobby, ServerRoom);
-        Db.Add(new AssignmentRule { Category = ItCategory, Department = It, DefaultPriority = TicketPriority.High });
+        Db.Add(new AssignmentRule { Category = ItCategory, Department = It, DefaultPriority = TicketPriority.Medium });
         Db.SaveChanges();
     }
 

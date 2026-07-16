@@ -264,9 +264,19 @@ tr.clickable:hover td { background: var(--surface-2); }
 .s-cancelled { background: var(--bad-bg); color: var(--bad); }
 .p-low { background: var(--slate-bg); color: var(--slate); }
 .p-medium { background: var(--info-bg); color: var(--info); }
-.p-high { background: var(--warn-bg); color: var(--warn); }
+.p-urgent { background: var(--warn-bg); color: var(--warn); }
 .p-critical { background: var(--bad-bg); color: var(--bad); }
 .badge-restricted { background: var(--bad-bg); color: var(--bad); }
+.s-pendingapproval { background: var(--warn-bg); color: var(--warn); }
+.s-rejected { background: var(--bad-bg); color: var(--bad); }
+
+/* overdue / late danger flag */
+.badge-overdue { background: var(--bad-bg); color: var(--bad); font-weight: 700; }
+.badge-overdue::before { background: var(--bad); animation: pulse 1.1s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.alert-overdue { background: var(--bad-bg); color: var(--bad); border: 1px solid color-mix(in srgb, var(--bad) 35%, transparent); }
+tr.row-overdue td { background: color-mix(in srgb, var(--bad) 7%, transparent); }
+.recommend { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: var(--mint-soft); color: var(--ok); font-size: 0.78rem; font-weight: 600; }
 
 /* ---------- forms & buttons ---------- */
 label { display: block; font-size: 0.8rem; font-weight: 600; color: var(--ink-soft); margin: 12px 0 5px; }

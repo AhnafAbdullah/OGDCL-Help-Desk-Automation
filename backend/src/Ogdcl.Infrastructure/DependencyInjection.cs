@@ -8,6 +8,7 @@ using Ogdcl.Application.Notifications;
 using Ogdcl.Application.Tickets;
 using Ogdcl.Application.Visits;
 using Ogdcl.Infrastructure.Auth;
+using Ogdcl.Infrastructure.Escalation;
 using Ogdcl.Infrastructure.Files;
 using Ogdcl.Infrastructure.Otp;
 using Ogdcl.Infrastructure.Persistence;
@@ -49,6 +50,12 @@ public static class DependencyInjection
         services.AddSingleton(new OtpOptions(
             TimeSpan.FromHours(config.GetValue("Otp:TtlHours", 24)),
             config.GetValue("Otp:MaxAttempts", 5)));
+
+        // Anti-starvation escalation thresholds (per severity, in minutes).
+        var escalation = new EscalationOptions();
+        config.GetSection("Escalation").Bind(escalation);
+        services.AddSingleton(escalation);
+        services.AddHostedService<EscalationWorker>();
 
         services.AddSingleton<IFileStorage>(_ => new LocalFileStorage(config["Storage:Root"] ?? "storage"));
 

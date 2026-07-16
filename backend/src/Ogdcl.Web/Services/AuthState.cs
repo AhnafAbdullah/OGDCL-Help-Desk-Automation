@@ -30,9 +30,12 @@ public class AuthState
     public UserDto? User { get; private set; }
 
     public bool IsLoggedIn => Token is not null && User is not null;
-    public bool IsAdmin => User?.Role == UserRole.Admin;
-    public bool IsSecurity => User?.Role is UserRole.Security or UserRole.Admin;
-    public bool IsHandler => User?.Role is UserRole.Handler or UserRole.Admin;
+    public bool IsSuperAdmin => User?.Role == UserRole.SuperAdmin;
+    public bool IsFloorAdmin => User?.Role == UserRole.FloorAdmin;
+    public bool IsAdmin => User?.Role is UserRole.FloorAdmin or UserRole.SuperAdmin;
+    public bool IsSecurity => User?.Role is UserRole.Security or UserRole.SuperAdmin;
+    public bool IsHandler => User?.Role == UserRole.Handler;
+    public bool IsEmployee => User?.Role == UserRole.Employee;
 
     public event Action? Changed;
 

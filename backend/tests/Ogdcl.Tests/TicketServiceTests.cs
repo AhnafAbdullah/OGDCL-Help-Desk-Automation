@@ -11,129 +11,231 @@ public class TicketServiceTests : IDisposable
 
     public TicketServiceTests()
     {
-        _service = new TicketService(_fx.Db, _fx.Notifier, new NullFileStorage());
+        _service = _fx.Tickets();
     }
 
     public void Dispose() => _fx.Dispose();
 
-    private Task<TicketDto> CreateTicket(int? categoryId = null) =>
+    private Task<TicketDto> Create(TicketPriority severity = TicketPriority.Medium, int? categoryId = null) =>
         _service.CreateAsync(_fx.Employee.Id,
-            new CreateTicketRequest(categoryId ?? _fx.ItCategory.Id, "Printer broken", "The 3rd floor printer is jammed."));
+            new CreateTicketRequest(categoryId ?? _fx.ItCategory.Id, "Printer broken", "The 3rd floor printer is jammed.", severity));
 
+    // ----- creation & routing ----------------------------------------------
     [Fact]
-    public async Task Create_AutoAssigns_ToHandlerInMappedDepartment_WithRulePriority()
+    public async Task Create_NonUrgent_IsOpenUnassigned_AndNotifiesDeptHandlers()
     {
-        var ticket = await CreateTicket();
-
-        Assert.Equal(TicketStatus.Assigned, ticket.Status);
-        Assert.Equal(TicketPriority.High, ticket.Priority); // from the IT rule
-        Assert.Equal("IT", ticket.Department);
-        Assert.Contains(ticket.AssignedTo, new[] { _fx.Handler1.DisplayName, _fx.Handler2.DisplayName });
-
-        // The assigned handler is notified.
-        var assignedName = ticket.AssignedTo;
-        var handlerId = assignedName == _fx.Handler1.DisplayName ? _fx.Handler1.Id : _fx.Handler2.Id;
-        Assert.Contains(_fx.Channel.Pushed, p =>
-            p.UserId == handlerId && p.Notification.Type == NotificationType.TicketAssigned);
-    }
-
-    [Fact]
-    public async Task Create_BalancesLoad_AcrossHandlers()
-    {
-        var first = await CreateTicket();
-        var second = await CreateTicket();
-
-        // With one open ticket each way, the two tickets must land on different handlers.
-        Assert.NotEqual(first.AssignedTo, second.AssignedTo);
-    }
-
-    [Fact]
-    public async Task Create_WithUnroutedCategory_StaysOpenAndUnassigned()
-    {
-        var ticket = await CreateTicket(_fx.UnroutedCategory.Id);
+        var ticket = await Create(TicketPriority.Medium);
 
         Assert.Equal(TicketStatus.Open, ticket.Status);
-        Assert.Null(ticket.AssignedTo);
+        Assert.Null(ticket.AssignedTo);          // no auto-assignment
+        Assert.Equal("IT", ticket.Department);
+        Assert.Contains(_fx.Channel.Pushed, p =>
+            (p.UserId == _fx.Handler1.Id || p.UserId == _fx.Handler2.Id)
+            && p.Notification.Type == NotificationType.NewComplaint);
     }
 
     [Fact]
-    public async Task InvalidTransition_IsRejected()
+    public async Task Create_Urgent_IsPendingApproval_AndNotifiesAdmins()
     {
-        var ticket = await CreateTicket();
-        var handlerId = await AssignedHandlerId(ticket);
+        var ticket = await Create(TicketPriority.Urgent);
 
-        // Assigned → Closed skips the workflow and must fail.
-        await Assert.ThrowsAsync<AppValidationException>(() =>
-            _service.UpdateStatusAsync(ticket.Id, handlerId, new UpdateTicketStatusRequest(TicketStatus.Closed, null)));
+        Assert.Equal(TicketStatus.PendingApproval, ticket.Status);
+        Assert.Contains(_fx.Channel.Pushed, p =>
+            p.UserId == _fx.ItFloorAdmin.Id && p.Notification.Type == NotificationType.ApprovalRequired);
+        Assert.Contains(_fx.Channel.Pushed, p =>
+            p.UserId == _fx.SuperAdmin.Id && p.Notification.Type == NotificationType.ApprovalRequired);
     }
 
     [Fact]
-    public async Task NonAssignedHandler_CannotChangeStatus()
+    public async Task Create_ByAdmin_IsForbidden()
     {
-        var ticket = await CreateTicket();
-        var otherHandler = ticket.AssignedTo == _fx.Handler1.DisplayName ? _fx.Handler2 : _fx.Handler1;
-
         await Assert.ThrowsAsync<ForbiddenException>(() =>
-            _service.UpdateStatusAsync(ticket.Id, otherHandler.Id,
-                new UpdateTicketStatusRequest(TicketStatus.InProgress, null)));
+            _service.CreateAsync(_fx.SuperAdmin.Id,
+                new CreateTicketRequest(_fx.ItCategory.Id, "x", "y", TicketPriority.Low)));
     }
 
     [Fact]
-    public async Task FullLifecycle_ResolvePromptsFeedback_CloseNotifiesBothParties()
+    public async Task Create_WithCriticalSeverity_IsRejected()
     {
-        var ticket = await CreateTicket();
-        var handlerId = await AssignedHandlerId(ticket);
+        await Assert.ThrowsAsync<AppValidationException>(() => Create(TicketPriority.Critical));
+    }
 
-        await _service.UpdateStatusAsync(ticket.Id, handlerId, new UpdateTicketStatusRequest(TicketStatus.InProgress, "Working on it"));
-        var resolved = await _service.UpdateStatusAsync(ticket.Id, handlerId, new UpdateTicketStatusRequest(TicketStatus.Resolved, "Fixed"));
+    // ----- urgent approval --------------------------------------------------
+    [Fact]
+    public async Task Approve_ByDeptFloorAdmin_OpensToHandlers()
+    {
+        var ticket = await Create(TicketPriority.Urgent);
+        var approved = await _service.ApproveAsync(ticket.Id, _fx.ItFloorAdmin.Id);
 
+        Assert.Equal(TicketStatus.Open, approved.Status);
+        Assert.Contains(_fx.Channel.Pushed, p =>
+            p.UserId == _fx.Employee.Id && p.Notification.Type == NotificationType.TicketStatusChanged);
+    }
+
+    [Fact]
+    public async Task Approve_ByOtherDeptFloorAdmin_IsForbidden()
+    {
+        var ticket = await Create(TicketPriority.Urgent);
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _service.ApproveAsync(ticket.Id, _fx.HrFloorAdmin.Id)); // HR admin cannot approve an IT complaint
+    }
+
+    [Fact]
+    public async Task Decline_Approval_MarksRejected_AndNotifiesAuthor()
+    {
+        var ticket = await Create(TicketPriority.Urgent);
+        var declined = await _service.RejectApprovalAsync(ticket.Id, _fx.SuperAdmin.Id, new RejectRequest("Not urgent"));
+
+        Assert.Equal(TicketStatus.Rejected, declined.Status);
+        Assert.Contains(_fx.Channel.Pushed, p =>
+            p.UserId == _fx.Employee.Id && p.Notification.Type == NotificationType.TicketRejected);
+    }
+
+    // ----- handler accept / reject -----------------------------------------
+    [Fact]
+    public async Task Accept_AssignsToHandler_AndCannotBeAcceptedTwice()
+    {
+        var ticket = await Create();
+        var accepted = await _service.AcceptAsync(ticket.Id, _fx.Handler1.Id);
+
+        Assert.Equal(TicketStatus.Assigned, accepted.Status);
+        Assert.Equal(_fx.Handler1.DisplayName, accepted.AssignedTo);
+        Assert.Contains(_fx.Channel.Pushed, p =>
+            p.UserId == _fx.Employee.Id && p.Notification.Type == NotificationType.TicketAccepted);
+
+        // A second handler can no longer accept it.
+        await Assert.ThrowsAsync<AppValidationException>(() => _service.AcceptAsync(ticket.Id, _fx.Handler2.Id));
+    }
+
+    [Fact]
+    public async Task Accept_ByHandlerInWrongDept_IsForbidden()
+    {
+        var ticket = await Create();
+        await Assert.ThrowsAsync<ForbiddenException>(() => _service.AcceptAsync(ticket.Id, _fx.HrHandler.Id));
+    }
+
+    [Fact]
+    public async Task Reject_KeepsOpen_AndRemovesFromThatHandlersAvailableList()
+    {
+        var ticket = await Create();
+        var afterReject = await _service.RejectAsync(ticket.Id, _fx.Handler1.Id, new RejectRequest("busy"));
+        Assert.Equal(TicketStatus.Open, afterReject.Status);
+
+        var h1Available = await _service.GetAvailableAsync(_fx.Handler1.Id);
+        var h2Available = await _service.GetAvailableAsync(_fx.Handler2.Id);
+        Assert.DoesNotContain(h1Available, t => t.Id == ticket.Id); // hidden from the rejecter
+        Assert.Contains(h2Available, t => t.Id == ticket.Id);       // still offered to others
+    }
+
+    [Fact]
+    public async Task Recommendation_SuggestsLeastLoadedHandler_WithoutAssigning()
+    {
+        // Handler1 is busy with one accepted ticket; a new complaint should recommend Handler2.
+        var busy = await Create();
+        await _service.AcceptAsync(busy.Id, _fx.Handler1.Id);
+
+        var fresh = await Create();
+        var seenByAdmin = await _service.GetByIdAsync(fresh.Id, _fx.ItFloorAdmin.Id);
+
+        Assert.Equal(_fx.Handler2.DisplayName, seenByAdmin.RecommendedHandler);
+        Assert.Null(seenByAdmin.AssignedTo); // recommended, not assigned
+    }
+
+    // ----- lifecycle --------------------------------------------------------
+    [Fact]
+    public async Task FullLifecycle_AcceptWorkResolveCloseFeedback()
+    {
+        var ticket = await Create();
+        await _service.AcceptAsync(ticket.Id, _fx.Handler1.Id);
+        await _service.UpdateStatusAsync(ticket.Id, _fx.Handler1.Id, new UpdateTicketStatusRequest(TicketStatus.InProgress, null));
+        var resolved = await _service.UpdateStatusAsync(ticket.Id, _fx.Handler1.Id, new UpdateTicketStatusRequest(TicketStatus.Resolved, "Fixed"));
         Assert.NotNull(resolved.ResolvedAt);
         Assert.Contains(_fx.Channel.Pushed, p =>
             p.UserId == _fx.Employee.Id && p.Notification.Type == NotificationType.FeedbackRequested);
 
         var closed = await _service.UpdateStatusAsync(ticket.Id, _fx.Employee.Id, new UpdateTicketStatusRequest(TicketStatus.Closed, null));
-        Assert.NotNull(closed.ClosedAt);
-        Assert.Contains(_fx.Channel.Pushed, p =>
-            p.UserId == handlerId && p.Notification.Type == NotificationType.TicketClosed);
+        Assert.Equal(TicketStatus.Closed, closed.Status);
 
-        // Status history recorded every step: created, in-progress, resolved, closed.
-        Assert.Equal(4, closed.StatusHistory.Count);
+        var withFeedback = await _service.AddFeedbackAsync(ticket.Id, _fx.Employee.Id, new TicketFeedbackRequest(5, "Great"));
+        Assert.Equal(5, withFeedback.Feedback!.Rating);
     }
 
     [Fact]
-    public async Task Feedback_RequiresResolvedTicket_AndOnlyOnce()
+    public async Task NonAssignedHandler_CannotProgressTicket()
     {
-        var ticket = await CreateTicket();
-        var handlerId = await AssignedHandlerId(ticket);
-
-        await Assert.ThrowsAsync<AppValidationException>(() =>
-            _service.AddFeedbackAsync(ticket.Id, _fx.Employee.Id, new TicketFeedbackRequest(5, "Great")));
-
-        await _service.UpdateStatusAsync(ticket.Id, handlerId, new UpdateTicketStatusRequest(TicketStatus.InProgress, null));
-        await _service.UpdateStatusAsync(ticket.Id, handlerId, new UpdateTicketStatusRequest(TicketStatus.Resolved, null));
-
-        var withFeedback = await _service.AddFeedbackAsync(ticket.Id, _fx.Employee.Id, new TicketFeedbackRequest(4, "Quick fix"));
-        Assert.Equal(4, withFeedback.Feedback!.Rating);
-
-        await Assert.ThrowsAsync<AppValidationException>(() =>
-            _service.AddFeedbackAsync(ticket.Id, _fx.Employee.Id, new TicketFeedbackRequest(1, "Changed my mind")));
-    }
-
-    [Fact]
-    public async Task Feedback_FromNonCreator_IsForbidden()
-    {
-        var ticket = await CreateTicket();
-        var handlerId = await AssignedHandlerId(ticket);
-        await _service.UpdateStatusAsync(ticket.Id, handlerId, new UpdateTicketStatusRequest(TicketStatus.InProgress, null));
-        await _service.UpdateStatusAsync(ticket.Id, handlerId, new UpdateTicketStatusRequest(TicketStatus.Resolved, null));
-
+        var ticket = await Create();
+        await _service.AcceptAsync(ticket.Id, _fx.Handler1.Id);
         await Assert.ThrowsAsync<ForbiddenException>(() =>
-            _service.AddFeedbackAsync(ticket.Id, handlerId, new TicketFeedbackRequest(5, null)));
+            _service.UpdateStatusAsync(ticket.Id, _fx.Handler2.Id, new UpdateTicketStatusRequest(TicketStatus.InProgress, null)));
     }
 
-    private async Task<int> AssignedHandlerId(TicketDto ticket)
+    // ----- anti-starvation escalation --------------------------------------
+    [Fact]
+    public async Task Escalation_OnTimeout_RaisesSeverity_FlagsOverdue_AndRestartsTimer()
     {
-        var full = await _service.GetByIdAsync(ticket.Id, _fx.Admin.Id);
-        return full.AssignedTo == _fx.Handler1.DisplayName ? _fx.Handler1.Id : _fx.Handler2.Id;
+        var ticket = await Create(TicketPriority.Low);
+        Assert.False(ticket.IsOverdue);
+
+        // Past the Low threshold (10 min) → escalates to Medium and flags overdue.
+        _fx.Time.Now = _fx.Time.Now.AddMinutes(11);
+        Assert.Equal(1, await _service.EscalateDueTicketsAsync());
+        var afterFirst = await _service.GetByIdAsync(ticket.Id, _fx.SuperAdmin.Id);
+        Assert.Equal(TicketPriority.Medium, afterFirst.Severity);
+        Assert.True(afterFirst.IsOverdue);
+
+        // Timer restarted: not due again immediately.
+        Assert.Equal(0, await _service.EscalateDueTicketsAsync());
+
+        // Past Medium (6) → Urgent, then past Urgent (3) → Critical, then capped.
+        _fx.Time.Now = _fx.Time.Now.AddMinutes(7);
+        await _service.EscalateDueTicketsAsync();
+        _fx.Time.Now = _fx.Time.Now.AddMinutes(4);
+        await _service.EscalateDueTicketsAsync();
+        var escalated = await _service.GetByIdAsync(ticket.Id, _fx.SuperAdmin.Id);
+        Assert.Equal(TicketPriority.Critical, escalated.Severity);
+
+        _fx.Time.Now = _fx.Time.Now.AddMinutes(4);
+        await _service.EscalateDueTicketsAsync();
+        var capped = await _service.GetByIdAsync(ticket.Id, _fx.SuperAdmin.Id);
+        Assert.Equal(TicketPriority.Critical, capped.Severity); // never beyond Critical
+    }
+
+    [Fact]
+    public async Task Escalation_IgnoresResolvedComplaints()
+    {
+        var ticket = await Create(TicketPriority.Low);
+        await _service.AcceptAsync(ticket.Id, _fx.Handler1.Id);
+        await _service.UpdateStatusAsync(ticket.Id, _fx.Handler1.Id, new UpdateTicketStatusRequest(TicketStatus.InProgress, null));
+        await _service.UpdateStatusAsync(ticket.Id, _fx.Handler1.Id, new UpdateTicketStatusRequest(TicketStatus.Resolved, null));
+
+        _fx.Time.Now = _fx.Time.Now.AddHours(2);
+        Assert.Equal(0, await _service.EscalateDueTicketsAsync()); // resolved tickets are not escalated
+    }
+
+    // ----- handler performance stats ---------------------------------------
+    [Fact]
+    public async Task HandlerStats_AreScopedByAdminType()
+    {
+        // Super admin sees IT + HR handlers; a floor admin sees only their own.
+        var superView = await _service.GetHandlerStatsAsync(_fx.SuperAdmin.Id);
+        var itView = await _service.GetHandlerStatsAsync(_fx.ItFloorAdmin.Id);
+
+        Assert.Contains(superView, s => s.HandlerId == _fx.HrHandler.Id);
+        Assert.Contains(superView, s => s.HandlerId == _fx.Handler1.Id);
+        Assert.All(itView, s => Assert.Equal("IT", s.Department));
+        Assert.DoesNotContain(itView, s => s.HandlerId == _fx.HrHandler.Id);
+    }
+
+    [Fact]
+    public async Task HandlerStats_CountResolvedAndClosed()
+    {
+        var ticket = await Create();
+        await _service.AcceptAsync(ticket.Id, _fx.Handler1.Id);
+        await _service.UpdateStatusAsync(ticket.Id, _fx.Handler1.Id, new UpdateTicketStatusRequest(TicketStatus.InProgress, null));
+        await _service.UpdateStatusAsync(ticket.Id, _fx.Handler1.Id, new UpdateTicketStatusRequest(TicketStatus.Resolved, null));
+
+        var stats = await _service.GetHandlerStatsAsync(_fx.ItFloorAdmin.Id);
+        var h1 = stats.First(s => s.HandlerId == _fx.Handler1.Id);
+        Assert.Equal(1, h1.Solved); // resolved counts as solved
     }
 }

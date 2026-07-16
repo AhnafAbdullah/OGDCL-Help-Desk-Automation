@@ -22,25 +22,38 @@
 else
 {
     <div class="stat-grid">
-        <div class="stat">
-            <div class="stat-icon"><Icon Name="ticket" /></div>
-            <div class="stat-value">@_myOpenTickets</div>
-            <div class="stat-label">My open complaints</div>
-        </div>
-        @if (Auth.User?.Role == UserRole.Handler)
+        @if (Auth.IsEmployee)
+        {
+            <div class="stat">
+                <div class="stat-icon"><Icon Name="ticket" /></div>
+                <div class="stat-value">@_myOpenTickets</div>
+                <div class="stat-label">My open complaints</div>
+            </div>
+        }
+        @if (Auth.IsHandler)
         {
             <div class="stat">
                 <div class="stat-icon"><Icon Name="inbox" /></div>
+                <div class="stat-value">@_available.Count</div>
+                <div class="stat-label">Available to accept</div>
+            </div>
+            <div class="stat">
+                <div class="stat-icon"><Icon Name="ticket" /></div>
                 <div class="stat-value">@_assigned.Count</div>
-                <div class="stat-label">Tickets in my queue</div>
+                <div class="stat-label">In my queue</div>
             </div>
         }
         @if (Auth.IsAdmin)
         {
             <div class="stat">
+                <div class="stat-icon"><Icon Name="clock" /></div>
+                <div class="stat-value">@_approvals.Count</div>
+                <div class="stat-label">Awaiting my approval</div>
+            </div>
+            <div class="stat">
                 <div class="stat-icon"><Icon Name="grid" /></div>
                 <div class="stat-value">@_totalTickets</div>
-                <div class="stat-label">Tickets (all time)</div>
+                <div class="stat-label">Complaints @(Auth.IsFloorAdmin ? "in my dept" : "all time")</div>
             </div>
         }
         @if (Auth.IsSecurity)
@@ -74,7 +87,11 @@ else
     <div class="card">
         <h2>Quick actions</h2>
         <div class="inline" style="flex-wrap:wrap">
-            <a class="btn btn-sm" href="/tickets/new"><Icon Name="plus" Size="16" /> Submit a complaint</a>
+            @if (Auth.IsEmployee)
+            {
+                <a class="btn btn-sm" href="/tickets/new"><Icon Name="plus" Size="16" /> Submit a complaint</a>
+            }
+            <a class="btn btn-sm btn-secondary" href="/tickets"><Icon Name="ticket" Size="16" /> Open Help Desk</a>
             <a class="btn btn-sm btn-secondary" href="/visitors"><Icon Name="users" Size="16" /> Register a visitor</a>
             @if (Auth.IsSecurity)
             {
@@ -108,7 +125,9 @@ else
 
 @code {
     private List<TicketSummaryDto> _mine = [];
+    private List<TicketSummaryDto> _available = [];
     private List<TicketSummaryDto> _assigned = [];
+    private List<TicketSummaryDto> _approvals = [];
     private List<VisitDto> _myVisits = [];
     private List<VisitDto> _pending = [];
     private List<VisitDto> _active = [];
@@ -118,13 +137,20 @@ else
 
     protected override async Task LoadAsync()
     {
-        _mine = await Api.GetMyTicketsAsync();
-        _myOpenTickets = _mine.Count(t => t.Status != TicketStatus.Closed);
         _myVisits = await Api.GetMyVisitsAsync();
         _unread = await Api.GetNotificationsAsync(unreadOnly: true);
 
-        if (Auth.User!.Role == UserRole.Handler)
+        if (Auth.IsEmployee)
+        {
+            _mine = await Api.GetMyTicketsAsync();
+            _myOpenTickets = _mine.Count(t => t.Status is not (TicketStatus.Closed or TicketStatus.Rejected));
+        }
+
+        if (Auth.IsHandler)
+        {
+            _available = await Api.GetAvailableTicketsAsync();
             _assigned = await Api.GetAssignedTicketsAsync();
+        }
 
         if (Auth.IsSecurity)
         {
@@ -133,6 +159,9 @@ else
         }
 
         if (Auth.IsAdmin)
+        {
+            _approvals = await Api.GetPendingApprovalsAsync();
             _totalTickets = (await Api.SearchTicketsAsync(null, 1, 1)).Total;
+        }
     }
 }

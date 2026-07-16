@@ -6,7 +6,7 @@
 <div class="page-head">
     <div>
         <h1>Submit a complaint</h1>
-        <div class="page-sub">It will be routed to the right department automatically</div>
+        <div class="page-sub">It is routed to the right department automatically</div>
     </div>
 </div>
 
@@ -15,37 +15,85 @@
     <div class="alert alert-error">@Error</div>
 }
 
-<div class="card" style="max-width:640px">
-    <label>Category</label>
-    <select @bind="_categoryId">
-        <option value="0">Select a category…</option>
-        @foreach (var c in _categories)
-        {
-            <option value="@c.Id">@c.Name</option>
-        }
-    </select>
-
-    <label>Title</label>
-    <input type="text" @bind="_title" placeholder="Short summary of the problem" />
-
-    <label>Description</label>
-    <textarea @bind="_description" placeholder="Describe what happened, where, and since when"></textarea>
-
-    <div style="margin-top:16px" class="inline">
-        <button class="btn" disabled="@_busy" @onclick="SubmitAsync"><Icon Name="check" Size="16" /> @(_busy ? "Submitting…" : "Submit complaint")</button>
-        <a class="btn btn-secondary" href="/tickets">Cancel</a>
+@if (!Auth.IsEmployee)
+{
+    <div class="card" style="max-width:640px">
+        <div class="section-title" style="margin-bottom:8px"><Icon Name="users" /> <h2 style="margin:0">Employee accounts only</h2></div>
+        <p class="hint">Complaints can only be raised from an employee account. Admins and handlers should sign in with their employee login to submit one.</p>
+        <a class="btn btn-secondary" href="/">Back to dashboard</a>
     </div>
-    <p class="hint" style="margin-top:10px">Photo/file attachments are supported by the API and the upcoming mobile app.</p>
-</div>
+}
+else
+{
+    <div class="card" style="max-width:640px">
+        <label>Category</label>
+        <select @bind="_categoryId">
+            <option value="0">Select a category…</option>
+            @foreach (var c in _categories)
+            {
+                <option value="@c.Id">@c.Name</option>
+            }
+        </select>
+
+        <label>Severity</label>
+        <select @bind="_severity">
+            <option value="@TicketPriority.Low">Low — routine, no rush</option>
+            <option value="@TicketPriority.Medium">Medium — normal priority</option>
+            <option value="@TicketPriority.Urgent">Urgent — needs admin approval</option>
+        </select>
+        @if (_severity == TicketPriority.Urgent)
+        {
+            <p class="hint" style="margin-top:5px">⚠ Urgent complaints must be approved by a floor or super admin before a handler sees them.</p>
+        }
+
+        <label>Title</label>
+        <input type="text" @bind="_title" placeholder="Short summary of the problem" />
+
+        <label>Description</label>
+        <textarea @bind="_description" placeholder="Describe what happened, where, and since when"></textarea>
+
+        <label>Attachments (optional)</label>
+        <InputFile OnChange="OnFilesSelected" multiple />
+        @if (_files.Count > 0)
+        {
+            <ul class="hint" style="margin:6px 0 0; padding-left:18px">
+                @foreach (var f in _files)
+                {
+                    <li>@f.Name (@FormatSize(f.Size))</li>
+                }
+            </ul>
+        }
+        <p class="hint" style="margin-top:4px">Images, PDF, Word, Excel or text. Up to 10 MB each.</p>
+
+        <div style="margin-top:16px" class="inline">
+            <button class="btn" disabled="@_busy" @onclick="SubmitAsync"><Icon Name="check" Size="16" /> @(_busy ? "Submitting…" : "Submit complaint")</button>
+            <a class="btn btn-secondary" href="/tickets">Cancel</a>
+        </div>
+    </div>
+}
 
 @code {
+    private const long MaxFileBytes = 10 * 1024 * 1024;
+
     private List<CategoryDto> _categories = [];
     private int _categoryId;
+    private TicketPriority _severity = TicketPriority.Medium;
     private string _title = "";
     private string _description = "";
+    private readonly List<IBrowserFile> _files = [];
     private bool _busy;
 
-    protected override async Task LoadAsync() => _categories = await Api.GetCategoriesAsync();
+    protected override async Task LoadAsync()
+    {
+        if (Auth.IsEmployee)
+            _categories = await Api.GetCategoriesAsync();
+    }
+
+    private void OnFilesSelected(InputFileChangeEventArgs e)
+    {
+        _files.Clear();
+        _files.AddRange(e.GetMultipleFiles(maximumFileCount: 10));
+    }
 
     private async Task SubmitAsync()
     {
@@ -53,9 +101,18 @@
         _busy = true;
         await Try(async () =>
         {
-            var ticket = await Api.CreateTicketAsync(new CreateTicketRequest(_categoryId, _title, _description));
+            var ticket = await Api.CreateTicketAsync(new CreateTicketRequest(_categoryId, _title, _description, _severity));
+            foreach (var file in _files)
+            {
+                await using var stream = file.OpenReadStream(MaxFileBytes);
+                await Api.UploadAttachmentAsync(ticket.Id, file.Name,
+                    string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType, stream);
+            }
             Nav.NavigateTo($"/tickets/{ticket.Id}");
         });
         _busy = false;
     }
+
+    private static string FormatSize(long bytes) =>
+        bytes < 1024 ? $"{bytes} B" : bytes < 1024 * 1024 ? $"{bytes / 1024.0:F1} KB" : $"{bytes / (1024.0 * 1024):F1} MB";
 }

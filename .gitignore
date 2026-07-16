@@ -17,3 +17,6 @@ backend/src/Ogdcl.Api/storage/
 # OS
 Thumbs.db
 .DS_Store
+
+# Personal notes (kept local, not shared)
+explanation.md

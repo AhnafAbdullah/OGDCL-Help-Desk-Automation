@@ -42,6 +42,9 @@ public class ApiClient
         _auth = auth;
     }
 
+    /// <summary>API root (e.g. http://localhost:5080/), for building direct file-download links.</summary>
+    public string BaseUrl => _http.BaseAddress!.ToString();
+
     // Auth
     public Task<AuthResponse> LoginAsync(string username, string password) =>
         PostAsync<AuthResponse>("api/auth/login", new LoginRequest(username, password), anonymous: true);
@@ -51,16 +54,39 @@ public class ApiClient
     public Task<TicketDto> CreateTicketAsync(CreateTicketRequest request) => PostAsync<TicketDto>("api/tickets", request);
     public Task<List<TicketSummaryDto>> GetMyTicketsAsync() => GetAsync<List<TicketSummaryDto>>("api/tickets/mine");
     public Task<List<TicketSummaryDto>> GetAssignedTicketsAsync() => GetAsync<List<TicketSummaryDto>>("api/tickets/assigned");
+    public Task<List<TicketSummaryDto>> GetAvailableTicketsAsync() => GetAsync<List<TicketSummaryDto>>("api/tickets/available");
+    public Task<List<TicketSummaryDto>> GetPendingApprovalsAsync() => GetAsync<List<TicketSummaryDto>>("api/tickets/pending-approvals");
     public Task<TicketDto> GetTicketAsync(int id) => GetAsync<TicketDto>($"api/tickets/{id}");
 
     public Task<TicketDto> UpdateTicketStatusAsync(int id, TicketStatus status, string? note) =>
         SendAsync<TicketDto>(HttpMethod.Patch, $"api/tickets/{id}/status", new UpdateTicketStatusRequest(status, note));
+
+    public Task<TicketDto> AcceptTicketAsync(int id) => PostAsync<TicketDto>($"api/tickets/{id}/accept", body: null);
+    public Task<TicketDto> RejectTicketAsync(int id, string? reason) => PostAsync<TicketDto>($"api/tickets/{id}/reject", new RejectRequest(reason));
+    public Task<TicketDto> ApproveTicketAsync(int id) => PostAsync<TicketDto>($"api/tickets/{id}/approve", body: null);
+    public Task<TicketDto> RejectApprovalAsync(int id, string? reason) => PostAsync<TicketDto>($"api/tickets/{id}/reject-approval", new RejectRequest(reason));
 
     public Task<TicketDto> AssignTicketAsync(int id, int handlerId) =>
         SendAsync<TicketDto>(HttpMethod.Patch, $"api/tickets/{id}/assign", new AssignTicketRequest(handlerId));
 
     public Task<TicketDto> AddFeedbackAsync(int id, int rating, string? comment) =>
         PostAsync<TicketDto>($"api/tickets/{id}/feedback", new TicketFeedbackRequest(rating, comment));
+
+    public async Task<AttachmentDto> UploadAttachmentAsync(int ticketId, string fileName, string contentType, Stream content)
+    {
+        using var form = new MultipartFormDataContent();
+        var fileContent = new StreamContent(content);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        form.Add(fileContent, "file", fileName);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, $"api/tickets/{ticketId}/attachments") { Content = form };
+        if (_auth.Token is not null)
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _auth.Token);
+
+        var response = await _http.SendAsync(request);
+        await EnsureSuccessAsync(response);
+        return (await response.Content.ReadFromJsonAsync<AttachmentDto>(Json))!;
+    }
 
     // Visits
     public Task<VisitDto> RegisterVisitAsync(RegisterVisitRequest request) => PostAsync<VisitDto>("api/visits", request);
@@ -96,6 +122,7 @@ public class ApiClient
         return GetAsync<PagedResult<TicketSummaryDto>>($"api/admin/tickets?{query}");
     }
 
+    public Task<List<HandlerStatDto>> GetHandlerStatsAsync() => GetAsync<List<HandlerStatDto>>("api/admin/handler-stats");
     public Task<List<AssignmentRuleDto>> GetRulesAsync() => GetAsync<List<AssignmentRuleDto>>("api/admin/assignment-rules");
     public Task<AssignmentRuleDto> UpsertRuleAsync(int categoryId, int departmentId, TicketPriority defaultPriority) =>
         PostAsync<AssignmentRuleDto>("api/admin/assignment-rules", new { categoryId, departmentId, defaultPriority });
@@ -124,21 +151,26 @@ public class ApiClient
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _auth.Token);
 
         var response = await _http.SendAsync(request);
-        if (!response.IsSuccessStatusCode)
-        {
-            var message = "The request failed.";
-            try
-            {
-                var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, string>>(Json);
-                if (payload is not null && payload.TryGetValue("error", out var error))
-                    message = error;
-            }
-            catch (JsonException)
-            {
-                // non-JSON error body; keep the generic message
-            }
-            throw new ApiException((int)response.StatusCode, message);
-        }
+        await EnsureSuccessAsync(response);
         return response;
+    }
+
+    private static async Task EnsureSuccessAsync(HttpResponseMessage response)
+    {
+        if (response.IsSuccessStatusCode)
+            return;
+
+        var message = "The request failed.";
+        try
+        {
+            var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, string>>(Json);
+            if (payload is not null && payload.TryGetValue("error", out var error))
+                message = error;
+        }
+        catch (JsonException)
+        {
+            // non-JSON error body; keep the generic message
+        }
+        throw new ApiException((int)response.StatusCode, message);
     }
 }

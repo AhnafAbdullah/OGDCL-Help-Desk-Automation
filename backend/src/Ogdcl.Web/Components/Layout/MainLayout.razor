@@ -42,7 +42,7 @@ else
                     <NavLink class="nav-link" href="/gate"><Icon Name="shield" /> Gate Desk</NavLink>
                 }
                 <NavLink class="nav-link" href="/notifications"><Icon Name="bell" /> Notifications</NavLink>
-                @if (Auth.IsAdmin)
+                @if (Auth.IsSuperAdmin)
                 {
                     <NavLink class="nav-link" href="/settings"><Icon Name="gear" /> Settings</NavLink>
                 }

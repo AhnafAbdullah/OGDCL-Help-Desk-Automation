@@ -114,7 +114,7 @@ public class VisitService
             ?? throw new UnauthorizedException("Unknown user.");
         var visit = await LoadVisitAsync(visitId, ct);
 
-        if (visit.HostId != actorId && actor.Role != UserRole.Admin)
+        if (visit.HostId != actorId && actor.Role != UserRole.SuperAdmin)
             throw new ForbiddenException("Only the host or an admin can resend the OTP.");
         if (visit.Status != VisitStatus.Registered)
             throw new AppValidationException($"This visit is {visit.Status}; the OTP cannot be resent.");
@@ -186,7 +186,7 @@ public class VisitService
             ?? throw new UnauthorizedException("Unknown user.");
         var visit = await LoadVisitAsync(visitId, ct);
 
-        if (visit.HostId != actorId && actor.Role != UserRole.Admin)
+        if (visit.HostId != actorId && actor.Role != UserRole.SuperAdmin)
             throw new ForbiddenException("Only the host or an admin can cancel a visit.");
         if (visit.Status != VisitStatus.Registered)
             throw new AppValidationException($"This visit is {visit.Status} and cannot be cancelled.");
@@ -213,7 +213,7 @@ public class VisitService
             ?? throw new UnauthorizedException("Unknown user.");
         var visit = await LoadVisitAsync(visitId, ct);
 
-        var canView = actor.Role is UserRole.Admin or UserRole.Security || visit.HostId == actorId;
+        var canView = actor.Role is UserRole.SuperAdmin or UserRole.Security || visit.HostId == actorId;
         if (!canView)
             throw new ForbiddenException("You do not have access to this visit.");
 
