@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/config/env.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../core/providers.dart';
+import '../../../domain/enums.dart';
 import '../../../mock/mock_auth_repository.dart';
 import '../data/auth_api.dart';
 import '../data/auth_repository.dart';
@@ -26,6 +27,12 @@ final authControllerProvider = StateNotifierProvider<AuthController, AuthState>(
   return controller;
 });
 
+/// Shown whenever an Admin account reaches this app — Admin is a
+/// web-dashboard-only role (org-wide stats, reassignment, and Critical
+/// complaint approval all live there) and has no mobile presence.
+const _adminNotSupportedMessage =
+    'Admins use the OGDCL web dashboard, not this app. Please sign in there instead.';
+
 class AuthController extends StateNotifier<AuthState> {
   AuthController(this._repository) : super(const AuthInitial());
 
@@ -34,13 +41,27 @@ class AuthController extends StateNotifier<AuthState> {
   Future<void> bootstrap() async {
     state = const AuthLoading();
     final user = await _repository.tryRestoreSession();
-    state = user == null ? const AuthUnauthenticated() : AuthAuthenticated(user);
+    if (user == null) {
+      state = const AuthUnauthenticated();
+      return;
+    }
+    if (user.role == UserRole.admin) {
+      await _repository.logout();
+      state = const AuthUnauthenticated(error: _adminNotSupportedMessage);
+      return;
+    }
+    state = AuthAuthenticated(user);
   }
 
   Future<void> login(String username, String password) async {
     state = const AuthLoading();
     try {
       final user = await _repository.login(username, password);
+      if (user.role == UserRole.admin) {
+        await _repository.logout();
+        state = const AuthUnauthenticated(error: _adminNotSupportedMessage);
+        return;
+      }
       state = AuthAuthenticated(user);
     } on ApiException catch (e) {
       state = AuthUnauthenticated(error: e.message);

@@ -1,10 +1,13 @@
 import 'package:dio/dio.dart';
 
-/// Raw HTTP calls for `/api/tickets/*`, `/api/categories`, and the
-/// admin-only ticket/user endpoints the mobile app reuses for the "All
-/// Tickets" tab and handler reassignment.
-class TicketApi {
-  TicketApi(this._dio);
+/// Raw HTTP calls for `/api/tickets/*` and `/api/categories`. Kept dumb on
+/// purpose — parsing and business rules live in [ComplaintRepository].
+///
+/// URL paths and JSON keys intentionally still say "ticket" — that's the
+/// real backend's wire contract, which this app doesn't control. Only the
+/// in-app Dart/UI terminology was renamed to "complaint".
+class ComplaintApi {
+  ComplaintApi(this._dio);
 
   final Dio _dio;
 
@@ -30,7 +33,10 @@ class TicketApi {
   Future<Response> updateStatus(int id, {required String status, String? note}) =>
       _dio.patch('/tickets/$id/status', data: {'status': status, 'note': note});
 
-  Future<Response> assign(int id, {required int handlerId}) =>
+  /// Real backend only allows Admin to call this — a Handler self-assign
+  /// against the real API will 403 until that endpoint's permission
+  /// check is updated server-side. Fully supported in mock mode.
+  Future<Response> selfAssign(int id, {required int handlerId}) =>
       _dio.patch('/tickets/$id/assign', data: {'handlerId': handlerId});
 
   Future<Response> feedback(int id, {required int rating, String? comment}) =>
@@ -52,18 +58,4 @@ class TicketApi {
         '/tickets/$ticketId/attachments/$attachmentId',
         options: Options(responseType: ResponseType.bytes),
       );
-
-  Future<Response> adminTickets({
-    String? status,
-    int page = 1,
-    int pageSize = 20,
-  }) =>
-      _dio.get('/admin/tickets', queryParameters: {
-        if (status != null) 'status': status,
-        'page': page,
-        'pageSize': pageSize,
-      });
-
-  Future<Response> adminUsers({String? role}) =>
-      _dio.get('/admin/users', queryParameters: {if (role != null) 'role': role});
 }

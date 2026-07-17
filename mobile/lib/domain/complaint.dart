@@ -33,86 +33,98 @@ class StatusHistoryEntry {
     required this.changedAt,
   });
 
-  final TicketStatus? fromStatus;
-  final TicketStatus toStatus;
+  final ComplaintStatus? fromStatus;
+  final ComplaintStatus toStatus;
   final String? note;
   final String changedBy;
   final DateTime changedAt;
 
   factory StatusHistoryEntry.fromJson(Map<String, dynamic> json) => StatusHistoryEntry(
-        fromStatus:
-            json['fromStatus'] == null ? null : TicketStatus.fromJson(json['fromStatus'] as String),
-        toStatus: TicketStatus.fromJson(json['toStatus'] as String),
+        fromStatus: json['fromStatus'] == null
+            ? null
+            : ComplaintStatus.fromJson(json['fromStatus'] as String),
+        toStatus: ComplaintStatus.fromJson(json['toStatus'] as String),
         note: json['note'] as String?,
         changedBy: json['changedBy'] as String,
         changedAt: DateTime.parse(json['changedAt'] as String),
       );
 }
 
-/// Named `TicketFeedback` (not `Feedback`) to avoid colliding with Flutter's
-/// own `Feedback` class (haptic/acoustic feedback helper in material.dart).
-class TicketFeedback {
-  const TicketFeedback({required this.rating, this.comment, required this.createdAt});
+/// Named `ComplaintFeedback` (not `Feedback`) to avoid colliding with
+/// Flutter's own `Feedback` class (haptic/acoustic feedback helper in
+/// material.dart).
+class ComplaintFeedback {
+  const ComplaintFeedback({required this.rating, this.comment, required this.createdAt});
 
   final int rating;
   final String? comment;
   final DateTime createdAt;
 
-  factory TicketFeedback.fromJson(Map<String, dynamic> json) => TicketFeedback(
+  factory ComplaintFeedback.fromJson(Map<String, dynamic> json) => ComplaintFeedback(
         rating: json['rating'] as int,
         comment: json['comment'] as String?,
         createdAt: DateTime.parse(json['createdAt'] as String),
       );
 }
 
-class TicketSummary {
-  const TicketSummary({
+class ComplaintSummary {
+  const ComplaintSummary({
     required this.id,
-    required this.ticketNumber,
+    required this.complaintNumber,
     required this.title,
     required this.category,
     required this.status,
-    required this.priority,
+    required this.severity,
     required this.createdBy,
     this.assignedTo,
     required this.createdAt,
     required this.updatedAt,
+    this.assignedAt,
   });
 
   final int id;
-  final String ticketNumber;
+  final String complaintNumber;
   final String title;
   final String category;
-  final TicketStatus status;
-  final TicketPriority priority;
+  final ComplaintStatus status;
+  final ComplaintSeverity severity;
   final String createdBy;
   final String? assignedTo;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final DateTime? assignedAt;
 
-  factory TicketSummary.fromJson(Map<String, dynamic> json) => TicketSummary(
+  bool get isOverdue =>
+      (status == ComplaintStatus.assigned || status == ComplaintStatus.inProgress) &&
+      DateTime.now().difference(assignedAt ?? createdAt) > severity.slaDuration;
+
+  /// The real backend's `TicketSummaryDto` has no `assignedAt`/severity-SLA
+  /// concept, so those fall back to sensible defaults when parsed from a
+  /// real API response instead of the mock backend.
+  factory ComplaintSummary.fromJson(Map<String, dynamic> json) => ComplaintSummary(
         id: json['id'] as int,
-        ticketNumber: json['ticketNumber'] as String,
+        complaintNumber: json['ticketNumber'] as String,
         title: json['title'] as String,
         category: json['category'] as String,
-        status: TicketStatus.fromJson(json['status'] as String),
-        priority: TicketPriority.fromJson(json['priority'] as String),
+        status: ComplaintStatus.fromJson(json['status'] as String),
+        severity: ComplaintSeverity.fromJson(json['priority'] as String),
         createdBy: json['createdBy'] as String,
         assignedTo: json['assignedTo'] as String?,
         createdAt: DateTime.parse(json['createdAt'] as String),
         updatedAt: DateTime.parse(json['updatedAt'] as String),
+        assignedAt: json['assignedAt'] == null ? null : DateTime.parse(json['assignedAt'] as String),
       );
 }
 
-class Ticket {
-  const Ticket({
+class Complaint {
+  const Complaint({
     required this.id,
-    required this.ticketNumber,
+    required this.complaintNumber,
     required this.title,
     required this.description,
     required this.category,
     required this.status,
-    required this.priority,
+    required this.severity,
     required this.createdBy,
     required this.createdById,
     this.assignedTo,
@@ -120,20 +132,22 @@ class Ticket {
     this.department,
     required this.createdAt,
     required this.updatedAt,
+    this.assignedAt,
     this.resolvedAt,
     this.closedAt,
+    this.rejectionReason,
     this.feedback,
     required this.statusHistory,
     required this.attachments,
   });
 
   final int id;
-  final String ticketNumber;
+  final String complaintNumber;
   final String title;
   final String description;
   final String category;
-  final TicketStatus status;
-  final TicketPriority priority;
+  final ComplaintStatus status;
+  final ComplaintSeverity severity;
   final String createdBy;
   final int createdById;
   final String? assignedTo;
@@ -141,20 +155,33 @@ class Ticket {
   final String? department;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  /// When a handler (self-assigned or manually assigned) first took
+  /// ownership of this complaint. Also the baseline the SLA countdown is
+  /// measured from — see [isOverdue].
+  final DateTime? assignedAt;
   final DateTime? resolvedAt;
   final DateTime? closedAt;
-  final TicketFeedback? feedback;
+
+  /// Set only when [status] is [ComplaintStatus.rejected] (declined on the
+  /// web dashboard during the Critical-severity approval step).
+  final String? rejectionReason;
+  final ComplaintFeedback? feedback;
   final List<StatusHistoryEntry> statusHistory;
   final List<Attachment> attachments;
 
-  factory Ticket.fromJson(Map<String, dynamic> json) => Ticket(
+  bool get isOverdue =>
+      (status == ComplaintStatus.assigned || status == ComplaintStatus.inProgress) &&
+      DateTime.now().difference(assignedAt ?? createdAt) > severity.slaDuration;
+
+  factory Complaint.fromJson(Map<String, dynamic> json) => Complaint(
         id: json['id'] as int,
-        ticketNumber: json['ticketNumber'] as String,
+        complaintNumber: json['ticketNumber'] as String,
         title: json['title'] as String,
         description: json['description'] as String,
         category: json['category'] as String,
-        status: TicketStatus.fromJson(json['status'] as String),
-        priority: TicketPriority.fromJson(json['priority'] as String),
+        status: ComplaintStatus.fromJson(json['status'] as String),
+        severity: ComplaintSeverity.fromJson(json['priority'] as String),
         createdBy: json['createdBy'] as String,
         createdById: json['createdById'] as int,
         assignedTo: json['assignedTo'] as String?,
@@ -162,11 +189,15 @@ class Ticket {
         department: json['department'] as String?,
         createdAt: DateTime.parse(json['createdAt'] as String),
         updatedAt: DateTime.parse(json['updatedAt'] as String),
+        assignedAt: json['assignedAt'] == null
+            ? _assignedAtFromHistory(json)
+            : DateTime.parse(json['assignedAt'] as String),
         resolvedAt: json['resolvedAt'] == null ? null : DateTime.parse(json['resolvedAt'] as String),
         closedAt: json['closedAt'] == null ? null : DateTime.parse(json['closedAt'] as String),
+        rejectionReason: json['rejectionReason'] as String?,
         feedback: json['feedback'] == null
             ? null
-            : TicketFeedback.fromJson(json['feedback'] as Map<String, dynamic>),
+            : ComplaintFeedback.fromJson(json['feedback'] as Map<String, dynamic>),
         statusHistory: (json['statusHistory'] as List)
             .map((e) => StatusHistoryEntry.fromJson(e as Map<String, dynamic>))
             .toList(),
@@ -174,4 +205,19 @@ class Ticket {
             .map((e) => Attachment.fromJson(e as Map<String, dynamic>))
             .toList(),
       );
+
+  /// The real backend's `TicketDto` has no `assignedAt` field — recover a
+  /// reasonable value from the status history's first transition into
+  /// `Assigned` so real-API complaints still show an assigned time.
+  static DateTime? _assignedAtFromHistory(Map<String, dynamic> json) {
+    final history = json['statusHistory'] as List?;
+    if (history == null) return null;
+    for (final entry in history) {
+      final map = entry as Map<String, dynamic>;
+      if ((map['toStatus'] as String?) == 'Assigned') {
+        return DateTime.parse(map['changedAt'] as String);
+      }
+    }
+    return null;
+  }
 }

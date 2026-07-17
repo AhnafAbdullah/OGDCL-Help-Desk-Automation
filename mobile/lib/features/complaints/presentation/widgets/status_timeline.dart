@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/utils/formatters.dart';
-import '../../../../domain/ticket.dart';
+import '../../../../domain/complaint.dart';
 
 class StatusTimeline extends StatelessWidget {
   const StatusTimeline({super.key, required this.entries});

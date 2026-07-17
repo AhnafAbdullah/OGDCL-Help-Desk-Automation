@@ -7,38 +7,37 @@ import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../../core/network/api_exception.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../domain/complaint.dart';
 import '../../../domain/enums.dart';
-import '../../../domain/ticket.dart';
 import '../../../domain/user.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/loading_view.dart';
 import '../../../shared/widgets/status_badge.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../auth/presentation/auth_state.dart';
-import '../data/handler_option.dart';
-import '../domain/ticket_actions.dart';
-import 'tickets_providers.dart';
+import '../domain/complaint_actions.dart';
+import 'complaints_providers.dart';
 import 'widgets/status_timeline.dart';
 
-class TicketDetailScreen extends ConsumerStatefulWidget {
-  const TicketDetailScreen({super.key, required this.ticketId});
+class ComplaintDetailScreen extends ConsumerStatefulWidget {
+  const ComplaintDetailScreen({super.key, required this.complaintId});
 
-  final int ticketId;
+  final int complaintId;
 
   @override
-  ConsumerState<TicketDetailScreen> createState() => _TicketDetailScreenState();
+  ConsumerState<ComplaintDetailScreen> createState() => _ComplaintDetailScreenState();
 }
 
-class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
+class _ComplaintDetailScreenState extends ConsumerState<ComplaintDetailScreen> {
   bool _busy = false;
 
   void _refreshAfterMutation() {
-    ref.invalidate(ticketDetailProvider(widget.ticketId));
-    ref.invalidate(myTicketsProvider);
-    ref.invalidate(assignedTicketsProvider);
-    ref.invalidate(adminTicketsProvider);
-    ref.invalidate(adminTicketCountsProvider);
+    ref.invalidate(complaintDetailProvider(widget.complaintId));
+    ref.invalidate(myComplaintsProvider);
+    ref.invalidate(assignedComplaintsProvider);
+    ref.invalidate(availableComplaintsProvider);
   }
 
   void _showError(String message) {
@@ -48,10 +47,12 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _updateStatus(TicketStatus status, {String? note}) async {
+  Future<void> _updateStatus(ComplaintStatus status, {String? note}) async {
     setState(() => _busy = true);
     try {
-      await ref.read(ticketRepositoryProvider).updateStatus(widget.ticketId, status: status, note: note);
+      await ref
+          .read(complaintRepositoryProvider)
+          .updateStatus(widget.complaintId, status: status, note: note);
       _refreshAfterMutation();
     } on ApiException catch (e) {
       _showError(e.message);
@@ -60,7 +61,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     }
   }
 
-  Future<void> _confirmStatusChange(TicketAction action, TicketStatus newStatus) async {
+  Future<void> _confirmStatusChange(ComplaintAction action, ComplaintStatus newStatus) async {
     final noteController = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
@@ -89,69 +90,38 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     }
   }
 
-  Future<void> _openReassignDialog() async {
-    setState(() => _busy = true);
-    List<HandlerOption> handlers;
-    try {
-      handlers = await ref.read(ticketRepositoryProvider).activeHandlers();
-    } on ApiException catch (e) {
-      if (mounted) setState(() => _busy = false);
-      _showError(e.message);
-      return;
-    }
-    if (mounted) setState(() => _busy = false);
-    if (!mounted) return;
-
-    if (handlers.isEmpty) {
-      _showError('No active handlers are available to reassign to.');
-      return;
-    }
-
-    var selected = handlers.first.id;
+  Future<void> _confirmSelfAssign(User actor) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          title: const Text('Reassign Ticket'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final h in handlers)
-                  RadioListTile<int>(
-                    value: h.id,
-                    groupValue: selected,
-                    title: Text(h.displayName),
-                    subtitle: h.department != null ? Text(h.department!) : null,
-                    onChanged: (value) => setDialogState(() => selected = value!),
-                  ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Reassign'),
-            ),
-          ],
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Pick Up Complaint'),
+        content: const Text(
+          'Pick up this complaint? You\'ll be responsible for working and resolving it.',
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Pick Up'),
+          ),
+        ],
       ),
     );
+    if (confirmed != true) return;
 
-    if (confirmed == true) {
-      setState(() => _busy = true);
-      try {
-        await ref.read(ticketRepositoryProvider).assign(widget.ticketId, handlerId: selected);
-        _refreshAfterMutation();
-      } on ApiException catch (e) {
-        _showError(e.message);
-      } finally {
-        if (mounted) setState(() => _busy = false);
-      }
+    setState(() => _busy = true);
+    try {
+      await ref
+          .read(complaintRepositoryProvider)
+          .selfAssign(widget.complaintId, handlerId: actor.id);
+      _refreshAfterMutation();
+    } on ApiException catch (e) {
+      _showError(e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -204,8 +174,8 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
       setState(() => _busy = true);
       try {
         final comment = commentController.text.trim();
-        await ref.read(ticketRepositoryProvider).submitFeedback(
-              widget.ticketId,
+        await ref.read(complaintRepositoryProvider).submitFeedback(
+              widget.complaintId,
               rating: rating,
               comment: comment.isEmpty ? null : comment,
             );
@@ -219,7 +189,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
   }
 
   Future<void> _attachFile() async {
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'docx', 'xlsx', 'txt'],
     );
@@ -230,9 +200,9 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     setState(() => _busy = true);
     try {
       await ref
-          .read(ticketRepositoryProvider)
-          .uploadAttachment(widget.ticketId, filePath: file.path!, fileName: file.name);
-      ref.invalidate(ticketDetailProvider(widget.ticketId));
+          .read(complaintRepositoryProvider)
+          .uploadAttachment(widget.complaintId, filePath: file.path!, fileName: file.name);
+      ref.invalidate(complaintDetailProvider(widget.complaintId));
     } on ApiException catch (e) {
       _showError(e.message);
     } finally {
@@ -243,8 +213,9 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
   Future<void> _downloadAndOpen(Attachment attachment) async {
     setState(() => _busy = true);
     try {
-      final bytes =
-          await ref.read(ticketRepositoryProvider).downloadAttachment(widget.ticketId, attachment.id);
+      final bytes = await ref
+          .read(complaintRepositoryProvider)
+          .downloadAttachment(widget.complaintId, attachment.id);
       final dir = await getTemporaryDirectory();
       final file = File('${dir.path}/${attachment.fileName}');
       await file.writeAsBytes(bytes);
@@ -258,53 +229,71 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final ticketAsync = ref.watch(ticketDetailProvider(widget.ticketId));
+    final complaintAsync = ref.watch(complaintDetailProvider(widget.complaintId));
     final authState = ref.watch(authControllerProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Ticket Details')),
-      body: ticketAsync.when(
-        data: (ticket) {
+      appBar: AppBar(title: const Text('Complaint Details')),
+      body: complaintAsync.when(
+        data: (complaint) {
           if (authState is! AuthAuthenticated) return const LoadingView();
-          return _buildBody(ticket, authState.user);
+          return _buildBody(complaint, authState.user);
         },
         loading: () => const LoadingView(),
         error: (error, _) => ErrorView(
-          message: error is ApiException ? error.message : 'Failed to load ticket.',
-          onRetry: () => ref.invalidate(ticketDetailProvider(widget.ticketId)),
+          message: error is ApiException ? error.message : 'Failed to load complaint.',
+          onRetry: () => ref.invalidate(complaintDetailProvider(widget.complaintId)),
         ),
       ),
     );
   }
 
-  Widget _buildBody(Ticket ticket, User currentUser) {
-    final actions = availableActions(ticket, currentUser);
+  Widget _buildBody(Complaint complaint, User currentUser) {
+    final actions = availableActions(complaint, currentUser);
     return Stack(
       children: [
         RefreshIndicator(
-          onRefresh: () => ref.refresh(ticketDetailProvider(widget.ticketId).future),
+          onRefresh: () => ref.refresh(complaintDetailProvider(widget.complaintId).future),
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
             children: [
-              _headerCard(ticket),
-              const SizedBox(height: 16),
-              _descriptionCard(ticket),
-              if (ticket.attachments.isNotEmpty) ...[
+              _headerCard(complaint),
+              if (complaint.status == ComplaintStatus.pendingApproval) ...[
                 const SizedBox(height: 16),
-                _attachmentsCard(ticket),
+                _infoBanner(
+                  icon: Icons.hourglass_top,
+                  color: AppColors.warn,
+                  message:
+                      'This Critical complaint is awaiting admin approval on the web dashboard '
+                      'before it\'s routed to a department.',
+                ),
               ],
-              if (ticket.feedback != null) ...[
+              if (complaint.status == ComplaintStatus.rejected) ...[
                 const SizedBox(height: 16),
-                _feedbackCard(ticket.feedback!),
+                _infoBanner(
+                  icon: Icons.cancel_outlined,
+                  color: AppColors.bad,
+                  message: complaint.rejectionReason ?? 'This complaint was rejected by the admin.',
+                ),
               ],
               const SizedBox(height: 16),
-              _historyCard(ticket),
+              _descriptionCard(complaint),
+              if (complaint.attachments.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                _attachmentsCard(complaint),
+              ],
+              if (complaint.feedback != null) ...[
+                const SizedBox(height: 16),
+                _feedbackCard(complaint.feedback!),
+              ],
+              const SizedBox(height: 16),
+              _historyCard(complaint),
               if (actions.isNotEmpty) ...[
                 const SizedBox(height: 20),
                 Wrap(
                   spacing: 10,
                   runSpacing: 10,
-                  children: [for (final action in actions) _buildActionButton(action)],
+                  children: [for (final action in actions) _buildActionButton(action, currentUser)],
                 ),
               ],
             ],
@@ -315,32 +304,47 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     );
   }
 
-  Widget _buildActionButton(TicketAction action) => switch (action) {
-        TicketAction.startProgress =>
-          _actionButton(action, () => _confirmStatusChange(action, TicketStatus.inProgress)),
-        TicketAction.markResolved =>
-          _actionButton(action, () => _confirmStatusChange(action, TicketStatus.resolved)),
-        TicketAction.closeTicket =>
-          _actionButton(action, () => _confirmStatusChange(action, TicketStatus.closed)),
-        TicketAction.reopenTicket => _actionButton(
+  Widget _infoBanner({required IconData icon, required Color color, required String message}) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: AppColors.tint(color), borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 10),
+          Expanded(child: Text(message, style: TextStyle(color: color, fontSize: 13))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionButton(ComplaintAction action, User actor) => switch (action) {
+        ComplaintAction.selfAssign => _actionButton(action, () => _confirmSelfAssign(actor)),
+        ComplaintAction.startProgress =>
+          _actionButton(action, () => _confirmStatusChange(action, ComplaintStatus.inProgress)),
+        ComplaintAction.markResolved =>
+          _actionButton(action, () => _confirmStatusChange(action, ComplaintStatus.resolved)),
+        ComplaintAction.closeComplaint =>
+          _actionButton(action, () => _confirmStatusChange(action, ComplaintStatus.closed)),
+        ComplaintAction.reopenComplaint => _actionButton(
             action,
-            () => _confirmStatusChange(action, TicketStatus.inProgress),
+            () => _confirmStatusChange(action, ComplaintStatus.inProgress),
             filled: false,
           ),
-        TicketAction.reassign => _actionButton(action, _openReassignDialog, filled: false),
-        TicketAction.leaveFeedback => _actionButton(action, _openFeedbackDialog, filled: false),
-        TicketAction.attachFile => _actionButton(action, _attachFile, filled: false),
+        ComplaintAction.leaveFeedback => _actionButton(action, _openFeedbackDialog, filled: false),
+        ComplaintAction.attachFile => _actionButton(action, _attachFile, filled: false),
       };
 
-  Widget _actionButton(TicketAction action, VoidCallback onTap, {bool filled = true}) {
+  Widget _actionButton(ComplaintAction action, VoidCallback onTap, {bool filled = true}) {
     final icon = switch (action) {
-      TicketAction.startProgress => Icons.play_arrow,
-      TicketAction.markResolved => Icons.check,
-      TicketAction.closeTicket => Icons.lock_outline,
-      TicketAction.reopenTicket => Icons.replay,
-      TicketAction.reassign => Icons.swap_horiz,
-      TicketAction.leaveFeedback => Icons.star_border,
-      TicketAction.attachFile => Icons.attach_file,
+      ComplaintAction.selfAssign => Icons.pan_tool_alt_outlined,
+      ComplaintAction.startProgress => Icons.play_arrow,
+      ComplaintAction.markResolved => Icons.check,
+      ComplaintAction.closeComplaint => Icons.lock_outline,
+      ComplaintAction.reopenComplaint => Icons.replay,
+      ComplaintAction.leaveFeedback => Icons.star_border,
+      ComplaintAction.attachFile => Icons.attach_file,
     };
     return filled
         ? ElevatedButton.icon(
@@ -355,7 +359,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
           );
   }
 
-  Widget _headerCard(Ticket ticket) {
+  Widget _headerCard(Complaint complaint) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -366,30 +370,37 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
               children: [
                 Expanded(
                   child: Text(
-                    ticket.ticketNumber,
+                    complaint.complaintNumber,
                     style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.black54),
                   ),
                 ),
-                PriorityBadge(priority: ticket.priority),
+                SeverityBadge(severity: complaint.severity),
                 const SizedBox(width: 8),
-                StatusBadge(status: ticket.status),
+                StatusBadge(status: complaint.status),
               ],
             ),
+            if (complaint.isOverdue) ...[
+              const SizedBox(height: 8),
+              const Align(alignment: Alignment.centerLeft, child: OverdueBadge()),
+            ],
             const SizedBox(height: 8),
             Text(
-              ticket.title,
+              complaint.title,
               style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 4),
-            Text(ticket.category, style: const TextStyle(color: Colors.black54)),
+            Text(complaint.category, style: const TextStyle(color: Colors.black54)),
             const Divider(height: 28),
-            _infoRow('Submitted by', ticket.createdBy),
-            if (ticket.assignedTo != null) _infoRow('Assigned to', ticket.assignedTo!),
-            if (ticket.department != null) _infoRow('Department', ticket.department!),
-            _infoRow('Created', Formatters.dateTime(ticket.createdAt)),
-            _infoRow('Last updated', Formatters.dateTime(ticket.updatedAt)),
-            if (ticket.resolvedAt != null) _infoRow('Resolved', Formatters.dateTime(ticket.resolvedAt!)),
-            if (ticket.closedAt != null) _infoRow('Closed', Formatters.dateTime(ticket.closedAt!)),
+            _infoRow('Submitted by', complaint.createdBy),
+            if (complaint.assignedTo != null) _infoRow('Assigned to', complaint.assignedTo!),
+            if (complaint.department != null) _infoRow('Department', complaint.department!),
+            _infoRow('Created', Formatters.dateTime(complaint.createdAt)),
+            if (complaint.assignedAt != null)
+              _infoRow('Assigned', Formatters.dateTime(complaint.assignedAt!)),
+            _infoRow('Last updated', Formatters.dateTime(complaint.updatedAt)),
+            if (complaint.resolvedAt != null)
+              _infoRow('Resolved', Formatters.dateTime(complaint.resolvedAt!)),
+            if (complaint.closedAt != null) _infoRow('Closed', Formatters.dateTime(complaint.closedAt!)),
           ],
         ),
       ),
@@ -412,7 +423,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     );
   }
 
-  Widget _descriptionCard(Ticket ticket) {
+  Widget _descriptionCard(Complaint complaint) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -424,14 +435,14 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
               style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
-            Text(ticket.description),
+            Text(complaint.description),
           ],
         ),
       ),
     );
   }
 
-  Widget _attachmentsCard(Ticket ticket) {
+  Widget _attachmentsCard(Complaint complaint) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -442,7 +453,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
               'Attachments',
               style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
             ),
-            for (final a in ticket.attachments)
+            for (final a in complaint.attachments)
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.insert_drive_file_outlined),
@@ -463,7 +474,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
-  Widget _feedbackCard(TicketFeedback feedback) {
+  Widget _feedbackCard(ComplaintFeedback feedback) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -495,7 +506,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     );
   }
 
-  Widget _historyCard(Ticket ticket) {
+  Widget _historyCard(Complaint complaint) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -507,7 +518,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
               style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 12),
-            StatusTimeline(entries: ticket.statusHistory),
+            StatusTimeline(entries: complaint.statusHistory),
           ],
         ),
       ),

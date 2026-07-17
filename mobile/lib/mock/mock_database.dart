@@ -1,12 +1,14 @@
 import '../domain/category.dart';
+import '../domain/complaint.dart';
 import '../domain/enums.dart';
 import '../domain/app_notification.dart';
-import '../domain/ticket.dart';
 import '../domain/user.dart';
 
 /// A seeded demo account — mirrors the backend's dev seeder (same
 /// usernames/passwords/roles) so the credentials in the README work
-/// identically against the mock backend or the real one.
+/// identically against the mock backend or the real one. Admin accounts
+/// are kept here only so login can correctly *reject* them — Admin is a
+/// web-dashboard-only role and never reaches the mobile app.
 class MockAccount {
   const MockAccount({
     required this.id,
@@ -16,6 +18,7 @@ class MockAccount {
     required this.email,
     required this.role,
     this.department,
+    this.designation,
   });
 
   final int id;
@@ -25,6 +28,7 @@ class MockAccount {
   final String email;
   final UserRole role;
   final String? department;
+  final String? designation;
 
   User toUser() => User(
         id: id,
@@ -33,6 +37,7 @@ class MockAccount {
         email: email,
         role: role,
         department: department,
+        designation: designation,
       );
 }
 
@@ -66,19 +71,19 @@ class _NotificationRecord {
 }
 
 /// A single in-memory stand-in for the whole backend, used when
-/// [Env.useMockBackend] is true. Mirrors the real API's behavior (auto
-/// routing on create, status-transition history, per-role notifications)
-/// closely enough to demo the full Help Desk workflow with no server
+/// [Env.useMockBackend] is true. Mirrors the app's Help Desk workflow
+/// (severity-driven approval routing, handler self-assignment, SLA
+/// overdue alerts) closely enough to demo the whole thing with no server
 /// running. All mock repositories share this one instance.
 class MockDatabase {
   MockDatabase._() {
-    _seedTickets();
+    _seedComplaints();
     _seedNotifications();
   }
 
   static final MockDatabase instance = MockDatabase._();
 
-  /// Set by MockAuthRepository on login/logout; read by the ticket and
+  /// Set by MockAuthRepository on login/logout; read by the complaint and
   /// notification repositories to scope "mine"/"assigned"/notification
   /// queries, the same way the real backend derives it from the JWT.
   User? currentUser;
@@ -91,6 +96,7 @@ class MockDatabase {
       displayName: 'System Admin',
       email: 'admin@ogdcl.com',
       role: UserRole.admin,
+      designation: 'System Administrator',
     ),
     MockAccount(
       id: 2,
@@ -99,6 +105,7 @@ class MockDatabase {
       displayName: 'Muhammad Ayan',
       email: 'ayan@ogdcl.com',
       role: UserRole.employee,
+      designation: 'Administrative Officer',
     ),
     MockAccount(
       id: 3,
@@ -107,6 +114,7 @@ class MockDatabase {
       displayName: 'Muhammad Umer',
       email: 'umer@ogdcl.com',
       role: UserRole.employee,
+      designation: 'Finance Analyst',
     ),
     MockAccount(
       id: 4,
@@ -115,6 +123,7 @@ class MockDatabase {
       displayName: 'Ibrahim Ahmad',
       email: 'ibrahim@ogdcl.com',
       role: UserRole.employee,
+      designation: 'Software Engineer',
     ),
     MockAccount(
       id: 5,
@@ -124,6 +133,7 @@ class MockDatabase {
       email: 'it.handler1@ogdcl.com',
       role: UserRole.handler,
       department: 'IT Support',
+      designation: 'IT Support Specialist',
     ),
     MockAccount(
       id: 6,
@@ -133,6 +143,7 @@ class MockDatabase {
       email: 'it.handler2@ogdcl.com',
       role: UserRole.handler,
       department: 'IT Support',
+      designation: 'IT Support Specialist',
     ),
     MockAccount(
       id: 7,
@@ -142,6 +153,7 @@ class MockDatabase {
       email: 'maint.handler1@ogdcl.com',
       role: UserRole.handler,
       department: 'Maintenance',
+      designation: 'Maintenance Supervisor',
     ),
     MockAccount(
       id: 8,
@@ -151,6 +163,7 @@ class MockDatabase {
       email: 'hr.handler1@ogdcl.com',
       role: UserRole.handler,
       department: 'HR',
+      designation: 'HR Officer',
     ),
     MockAccount(
       id: 9,
@@ -160,6 +173,7 @@ class MockDatabase {
       email: 'fac.handler1@ogdcl.com',
       role: UserRole.handler,
       department: 'Facilities',
+      designation: 'Facilities Supervisor',
     ),
     MockAccount(
       id: 10,
@@ -169,6 +183,7 @@ class MockDatabase {
       email: 'civil.handler1@ogdcl.com',
       role: UserRole.handler,
       department: 'Civil Works',
+      designation: 'Civil Works Engineer',
     ),
     MockAccount(
       id: 11,
@@ -177,6 +192,7 @@ class MockDatabase {
       displayName: 'Security Guard One',
       email: 'guard1@ogdcl.com',
       role: UserRole.security,
+      designation: 'Security Guard',
     ),
     MockAccount(
       id: 12,
@@ -185,6 +201,7 @@ class MockDatabase {
       displayName: 'Security Guard Two',
       email: 'guard2@ogdcl.com',
       role: UserRole.security,
+      designation: 'Security Guard',
     ),
   ];
 
@@ -204,20 +221,25 @@ class MockDatabase {
     5: 'Civil Works',
   };
 
-  static const Map<int, TicketPriority> _defaultPriorityByCategoryId = {
-    1: TicketPriority.medium,
-    2: TicketPriority.medium,
-    3: TicketPriority.low,
-    4: TicketPriority.medium,
-    5: TicketPriority.high,
+  /// Short code used in the complaint number (e.g. "U-0007-IT-20260710").
+  static const Map<int, String> _deptCodeByCategoryId = {
+    1: 'IT',
+    2: 'MNT',
+    3: 'HR',
+    4: 'FAC',
+    5: 'CIV',
   };
 
-  final List<Ticket> _tickets = [];
-  int _nextTicketId = 100;
-  int _ticketNumberCounter = 8;
+  final List<Complaint> _complaints = [];
+  int _nextComplaintId = 100;
+  int _complaintSequence = 10;
 
   final List<_NotificationRecord> _notifications = [];
   int _nextNotificationId = 100;
+
+  /// Complaint ids an overdue alert has already been raised for, so
+  /// [checkOverdueAndNotify] doesn't re-notify on every poll.
+  final Set<int> _overdueNotified = {};
 
   MockAccount? accountByCredentials(String username, String password) {
     for (final a in accounts) {
@@ -230,80 +252,128 @@ class MockDatabase {
 
   MockAccount accountById(int id) => accounts.firstWhere((a) => a.id == id);
 
-  List<MockAccount> handlersFor(String department) => accounts
-      .where((a) => a.role == UserRole.handler && a.department == department)
-      .toList();
+  // ------------------------------------------------------------- Complaints
 
-  // ---------------------------------------------------------------- Tickets
+  List<Complaint> get allComplaints => List.unmodifiable(_complaints);
 
-  List<Ticket> get allTickets => List.unmodifiable(_tickets);
+  Complaint byId(int id) => _complaints.firstWhere((c) => c.id == id);
 
-  Ticket byId(int id) => _tickets.firstWhere((t) => t.id == id);
-
-  Ticket createTicket({
+  Complaint createComplaint({
     required int categoryId,
     required String title,
     required String description,
+    required ComplaintSeverity severity,
     required User creator,
   }) {
     final category = categories.firstWhere((c) => c.id == categoryId);
     final department = _departmentByCategoryId[categoryId];
-    final priority = _defaultPriorityByCategoryId[categoryId] ?? TicketPriority.medium;
-    final handlers = department == null ? const <MockAccount>[] : handlersFor(department);
-    final handler = handlers.isEmpty ? null : handlers.first;
-
     final now = DateTime.now();
-    final id = _nextTicketId++;
-    _ticketNumberCounter++;
-    final ticketNumber = 'T-${now.year}-${_ticketNumberCounter.toString().padLeft(4, '0')}';
-    final status = handler == null ? TicketStatus.open : TicketStatus.assigned;
+    final id = _nextComplaintId++;
+    final complaintNumber = _generateComplaintNumber(
+      severity: severity,
+      categoryId: categoryId,
+      date: now,
+    );
 
-    final ticket = Ticket(
+    // Critical severity is gated behind admin approval (handled on the web
+    // dashboard — Admin has no mobile presence); everything else lands in
+    // the department's open queue for any handler there to pick up.
+    final status =
+        severity == ComplaintSeverity.critical ? ComplaintStatus.pendingApproval : ComplaintStatus.open;
+
+    final complaint = Complaint(
       id: id,
-      ticketNumber: ticketNumber,
+      complaintNumber: complaintNumber,
       title: title,
       description: description,
       category: category.name,
       status: status,
-      priority: priority,
+      severity: severity,
       createdBy: creator.displayName,
       createdById: creator.id,
-      assignedTo: handler?.displayName,
-      assignedToId: handler?.id,
       department: department,
       createdAt: now,
       updatedAt: now,
       statusHistory: [
         StatusHistoryEntry(
           toStatus: status,
-          note: 'Ticket created',
+          note: status == ComplaintStatus.pendingApproval
+              ? 'Submitted — Critical severity requires admin approval before routing.'
+              : 'Complaint submitted.',
           changedBy: creator.displayName,
           changedAt: now,
         ),
       ],
       attachments: const [],
     );
-    _tickets.add(ticket);
-
-    if (handler != null) {
-      _addNotification(
-        userId: handler.id,
-        type: NotificationType.ticketAssigned,
-        title: 'New ticket $ticketNumber',
-        body: '"$title" (${category.name}) has been assigned to you.',
-      );
-    }
-    return ticket;
+    _complaints.add(complaint);
+    return complaint;
   }
 
-  Ticket updateStatus(int id, {required TicketStatus status, String? note, required User actor}) {
-    final index = _tickets.indexWhere((t) => t.id == id);
-    final ticket = _tickets[index];
+  /// A handler picking an unassigned (Open) complaint in their own
+  /// department off the shared queue.
+  Complaint selfAssign(int id, {required User handler}) {
+    final index = _complaints.indexWhere((c) => c.id == id);
+    final complaint = _complaints[index];
     final now = DateTime.now();
     final history = [
-      ...ticket.statusHistory,
+      ...complaint.statusHistory,
       StatusHistoryEntry(
-        fromStatus: ticket.status,
+        fromStatus: complaint.status,
+        toStatus: ComplaintStatus.assigned,
+        note: 'Self-assigned by ${handler.displayName}',
+        changedBy: handler.displayName,
+        changedAt: now,
+      ),
+    ];
+
+    final updated = Complaint(
+      id: complaint.id,
+      complaintNumber: complaint.complaintNumber,
+      title: complaint.title,
+      description: complaint.description,
+      category: complaint.category,
+      status: ComplaintStatus.assigned,
+      severity: complaint.severity,
+      createdBy: complaint.createdBy,
+      createdById: complaint.createdById,
+      assignedTo: handler.displayName,
+      assignedToId: handler.id,
+      department: complaint.department,
+      createdAt: complaint.createdAt,
+      updatedAt: now,
+      assignedAt: now,
+      resolvedAt: complaint.resolvedAt,
+      closedAt: complaint.closedAt,
+      rejectionReason: complaint.rejectionReason,
+      feedback: complaint.feedback,
+      statusHistory: history,
+      attachments: complaint.attachments,
+    );
+    _complaints[index] = updated;
+
+    _addNotification(
+      userId: complaint.createdById,
+      type: NotificationType.complaintAssigned,
+      title: 'Complaint ${complaint.complaintNumber} picked up',
+      body: '"${complaint.title}" is now being handled by ${handler.displayName}.',
+    );
+    return updated;
+  }
+
+  Complaint updateStatus(
+    int id, {
+    required ComplaintStatus status,
+    String? note,
+    required User actor,
+  }) {
+    final index = _complaints.indexWhere((c) => c.id == id);
+    final complaint = _complaints[index];
+    final now = DateTime.now();
+    final history = [
+      ...complaint.statusHistory,
+      StatusHistoryEntry(
+        fromStatus: complaint.status,
         toStatus: status,
         note: note,
         changedBy: actor.displayName,
@@ -311,59 +381,61 @@ class MockDatabase {
       ),
     ];
 
-    final updated = Ticket(
-      id: ticket.id,
-      ticketNumber: ticket.ticketNumber,
-      title: ticket.title,
-      description: ticket.description,
-      category: ticket.category,
+    final updated = Complaint(
+      id: complaint.id,
+      complaintNumber: complaint.complaintNumber,
+      title: complaint.title,
+      description: complaint.description,
+      category: complaint.category,
       status: status,
-      priority: ticket.priority,
-      createdBy: ticket.createdBy,
-      createdById: ticket.createdById,
-      assignedTo: ticket.assignedTo,
-      assignedToId: ticket.assignedToId,
-      department: ticket.department,
-      createdAt: ticket.createdAt,
+      severity: complaint.severity,
+      createdBy: complaint.createdBy,
+      createdById: complaint.createdById,
+      assignedTo: complaint.assignedTo,
+      assignedToId: complaint.assignedToId,
+      department: complaint.department,
+      createdAt: complaint.createdAt,
       updatedAt: now,
-      resolvedAt: status == TicketStatus.resolved
+      assignedAt: complaint.assignedAt,
+      resolvedAt: status == ComplaintStatus.resolved
           ? now
-          : (status == TicketStatus.inProgress ? null : ticket.resolvedAt),
-      closedAt: status == TicketStatus.closed ? now : ticket.closedAt,
-      feedback: ticket.feedback,
+          : (status == ComplaintStatus.inProgress ? null : complaint.resolvedAt),
+      closedAt: status == ComplaintStatus.closed ? now : complaint.closedAt,
+      rejectionReason: complaint.rejectionReason,
+      feedback: complaint.feedback,
       statusHistory: history,
-      attachments: ticket.attachments,
+      attachments: complaint.attachments,
     );
-    _tickets[index] = updated;
+    _complaints[index] = updated;
 
-    if (status == TicketStatus.closed) {
-      if (ticket.createdById != actor.id) {
+    if (status == ComplaintStatus.closed) {
+      if (complaint.createdById != actor.id) {
         _addNotification(
-          userId: ticket.createdById,
-          type: NotificationType.ticketClosed,
-          title: 'Ticket ${ticket.ticketNumber} closed',
-          body: '"${ticket.title}" has been closed.',
+          userId: complaint.createdById,
+          type: NotificationType.complaintClosed,
+          title: 'Complaint ${complaint.complaintNumber} closed',
+          body: '"${complaint.title}" has been closed.',
         );
       }
     } else {
       final others = <int>{};
-      if (ticket.createdById != actor.id) others.add(ticket.createdById);
-      if (ticket.assignedToId != null && ticket.assignedToId != actor.id) {
-        others.add(ticket.assignedToId!);
+      if (complaint.createdById != actor.id) others.add(complaint.createdById);
+      if (complaint.assignedToId != null && complaint.assignedToId != actor.id) {
+        others.add(complaint.assignedToId!);
       }
       for (final uid in others) {
         _addNotification(
           userId: uid,
-          type: NotificationType.ticketStatusChanged,
-          title: 'Ticket ${ticket.ticketNumber}: ${ticket.status.label} → ${status.label}',
-          body: '"${ticket.title}" was moved to ${status.label} by ${actor.displayName}.',
+          type: NotificationType.complaintStatusChanged,
+          title: 'Complaint ${complaint.complaintNumber}: ${complaint.status.label} → ${status.label}',
+          body: '"${complaint.title}" was moved to ${status.label} by ${actor.displayName}.',
         );
       }
-      if (status == TicketStatus.resolved) {
+      if (status == ComplaintStatus.resolved) {
         _addNotification(
-          userId: ticket.createdById,
+          userId: complaint.createdById,
           type: NotificationType.feedbackRequested,
-          title: 'How was ticket ${ticket.ticketNumber} handled?',
+          title: 'How was complaint ${complaint.complaintNumber} handled?',
           body: 'Your complaint has been resolved. Please rate how it was handled.',
         );
       }
@@ -372,116 +444,111 @@ class MockDatabase {
     return updated;
   }
 
-  Ticket assign(int id, {required int handlerId, required User actor}) {
-    final index = _tickets.indexWhere((t) => t.id == id);
-    final ticket = _tickets[index];
-    final handler = accountById(handlerId);
-    final now = DateTime.now();
-    final newStatus = ticket.status == TicketStatus.open ? TicketStatus.assigned : ticket.status;
-    final history = [
-      ...ticket.statusHistory,
-      StatusHistoryEntry(
-        fromStatus: ticket.status,
-        toStatus: newStatus,
-        note: 'Manually assigned to ${handler.displayName}',
-        changedBy: actor.displayName,
-        changedAt: now,
-      ),
-    ];
-
-    final updated = Ticket(
-      id: ticket.id,
-      ticketNumber: ticket.ticketNumber,
-      title: ticket.title,
-      description: ticket.description,
-      category: ticket.category,
-      status: newStatus,
-      priority: ticket.priority,
-      createdBy: ticket.createdBy,
-      createdById: ticket.createdById,
-      assignedTo: handler.displayName,
-      assignedToId: handler.id,
-      department: handler.department ?? ticket.department,
-      createdAt: ticket.createdAt,
-      updatedAt: now,
-      resolvedAt: ticket.resolvedAt,
-      closedAt: ticket.closedAt,
-      feedback: ticket.feedback,
-      statusHistory: history,
-      attachments: ticket.attachments,
-    );
-    _tickets[index] = updated;
-
-    _addNotification(
-      userId: handler.id,
-      type: NotificationType.ticketAssigned,
-      title: 'Ticket ${ticket.ticketNumber} assigned to you',
-      body: '"${ticket.title}" has been assigned to you by ${actor.displayName}.',
-    );
-    return updated;
-  }
-
-  Ticket submitFeedback(int id, {required int rating, String? comment}) {
-    final index = _tickets.indexWhere((t) => t.id == id);
-    final ticket = _tickets[index];
-    final updated = Ticket(
-      id: ticket.id,
-      ticketNumber: ticket.ticketNumber,
-      title: ticket.title,
-      description: ticket.description,
-      category: ticket.category,
-      status: ticket.status,
-      priority: ticket.priority,
-      createdBy: ticket.createdBy,
-      createdById: ticket.createdById,
-      assignedTo: ticket.assignedTo,
-      assignedToId: ticket.assignedToId,
-      department: ticket.department,
-      createdAt: ticket.createdAt,
+  Complaint submitFeedback(int id, {required int rating, String? comment}) {
+    final index = _complaints.indexWhere((c) => c.id == id);
+    final complaint = _complaints[index];
+    final updated = Complaint(
+      id: complaint.id,
+      complaintNumber: complaint.complaintNumber,
+      title: complaint.title,
+      description: complaint.description,
+      category: complaint.category,
+      status: complaint.status,
+      severity: complaint.severity,
+      createdBy: complaint.createdBy,
+      createdById: complaint.createdById,
+      assignedTo: complaint.assignedTo,
+      assignedToId: complaint.assignedToId,
+      department: complaint.department,
+      createdAt: complaint.createdAt,
       updatedAt: DateTime.now(),
-      resolvedAt: ticket.resolvedAt,
-      closedAt: ticket.closedAt,
-      feedback: TicketFeedback(rating: rating, comment: comment, createdAt: DateTime.now()),
-      statusHistory: ticket.statusHistory,
-      attachments: ticket.attachments,
+      assignedAt: complaint.assignedAt,
+      resolvedAt: complaint.resolvedAt,
+      closedAt: complaint.closedAt,
+      rejectionReason: complaint.rejectionReason,
+      feedback: ComplaintFeedback(rating: rating, comment: comment, createdAt: DateTime.now()),
+      statusHistory: complaint.statusHistory,
+      attachments: complaint.attachments,
     );
-    _tickets[index] = updated;
+    _complaints[index] = updated;
     return updated;
   }
 
-  Ticket addAttachment(int id, {required String fileName, required String contentType, required int sizeBytes}) {
-    final index = _tickets.indexWhere((t) => t.id == id);
-    final ticket = _tickets[index];
+  Complaint addAttachment(
+    int id, {
+    required String fileName,
+    required String contentType,
+    required int sizeBytes,
+  }) {
+    final index = _complaints.indexWhere((c) => c.id == id);
+    final complaint = _complaints[index];
     final attachment = Attachment(
-      id: (index + 1) * 1000 + ticket.attachments.length + 1,
+      id: (index + 1) * 1000 + complaint.attachments.length + 1,
       fileName: fileName,
       contentType: contentType,
       sizeBytes: sizeBytes,
       uploadedAt: DateTime.now(),
     );
-    final updated = Ticket(
-      id: ticket.id,
-      ticketNumber: ticket.ticketNumber,
-      title: ticket.title,
-      description: ticket.description,
-      category: ticket.category,
-      status: ticket.status,
-      priority: ticket.priority,
-      createdBy: ticket.createdBy,
-      createdById: ticket.createdById,
-      assignedTo: ticket.assignedTo,
-      assignedToId: ticket.assignedToId,
-      department: ticket.department,
-      createdAt: ticket.createdAt,
+    final updated = Complaint(
+      id: complaint.id,
+      complaintNumber: complaint.complaintNumber,
+      title: complaint.title,
+      description: complaint.description,
+      category: complaint.category,
+      status: complaint.status,
+      severity: complaint.severity,
+      createdBy: complaint.createdBy,
+      createdById: complaint.createdById,
+      assignedTo: complaint.assignedTo,
+      assignedToId: complaint.assignedToId,
+      department: complaint.department,
+      createdAt: complaint.createdAt,
       updatedAt: DateTime.now(),
-      resolvedAt: ticket.resolvedAt,
-      closedAt: ticket.closedAt,
-      feedback: ticket.feedback,
-      statusHistory: ticket.statusHistory,
-      attachments: [...ticket.attachments, attachment],
+      assignedAt: complaint.assignedAt,
+      resolvedAt: complaint.resolvedAt,
+      closedAt: complaint.closedAt,
+      rejectionReason: complaint.rejectionReason,
+      feedback: complaint.feedback,
+      statusHistory: complaint.statusHistory,
+      attachments: [...complaint.attachments, attachment],
     );
-    _tickets[index] = updated;
+    _complaints[index] = updated;
     return updated;
+  }
+
+  /// Scans active complaints for SLA breaches and raises a one-time
+  /// overdue notification for each newly-breached one. Called lazily from
+  /// the repository's read paths — there's no real background scheduler
+  /// in a mock/offline app, so "the alert generates" the moment the app
+  /// next asks for the affected list.
+  void checkOverdueAndNotify() {
+    for (final c in _complaints) {
+      if (c.isOverdue && !_overdueNotified.contains(c.id) && c.assignedToId != null) {
+        _overdueNotified.add(c.id);
+        _addNotification(
+          userId: c.assignedToId!,
+          type: NotificationType.complaintOverdue,
+          title: 'Complaint ${c.complaintNumber} is overdue',
+          body:
+              '"${c.title}" (${c.severity.label}) has exceeded its ${_formatSla(c.severity.slaDuration)} SLA.',
+        );
+      }
+    }
+  }
+
+  String _formatSla(Duration d) => d.inHours < 24 ? '${d.inHours}-hour' : '${d.inDays}-day';
+
+  String _generateComplaintNumber({
+    required ComplaintSeverity severity,
+    required int categoryId,
+    required DateTime date,
+  }) {
+    final seq = (++_complaintSequence).toString().padLeft(4, '0');
+    final deptCode = _deptCodeByCategoryId[categoryId] ?? 'GEN';
+    final dateStr = '${date.year.toString().padLeft(4, '0')}'
+        '${date.month.toString().padLeft(2, '0')}'
+        '${date.day.toString().padLeft(2, '0')}';
+    return '${severity.letter}-$seq-$deptCode-$dateStr';
   }
 
   // ----------------------------------------------------------- Notifications
@@ -520,7 +587,7 @@ class MockDatabase {
 
   // ------------------------------------------------------------- Seed data
 
-  void _seedTickets() {
+  void _seedComplaints() {
     final now = DateTime.now();
     DateTime daysAgo(int d, [int h = 9]) => now.subtract(Duration(days: d, hours: 24 - h));
 
@@ -530,23 +597,25 @@ class MockDatabase {
       required String title,
       required String description,
       required String category,
-      required TicketStatus status,
-      required TicketPriority priority,
+      required ComplaintStatus status,
+      required ComplaintSeverity severity,
       required MockAccount creator,
       MockAccount? handler,
-      TicketFeedback? feedback,
+      DateTime? assignedAt,
+      ComplaintFeedback? feedback,
+      String? rejectionReason,
       required List<StatusHistoryEntry> history,
       required DateTime createdAt,
       required DateTime updatedAt,
     }) {
-      _tickets.add(Ticket(
+      _complaints.add(Complaint(
         id: id,
-        ticketNumber: number,
+        complaintNumber: number,
         title: title,
         description: description,
         category: category,
         status: status,
-        priority: priority,
+        severity: severity,
         createdBy: creator.displayName,
         createdById: creator.id,
         assignedTo: handler?.displayName,
@@ -554,10 +623,12 @@ class MockDatabase {
         department: handler?.department,
         createdAt: createdAt,
         updatedAt: updatedAt,
-        resolvedAt: status == TicketStatus.resolved || status == TicketStatus.closed
+        assignedAt: assignedAt,
+        resolvedAt: status == ComplaintStatus.resolved || status == ComplaintStatus.closed
             ? updatedAt.subtract(const Duration(hours: 2))
             : null,
-        closedAt: status == TicketStatus.closed ? updatedAt : null,
+        closedAt: status == ComplaintStatus.closed ? updatedAt : null,
+        rejectionReason: rejectionReason,
         feedback: feedback,
         statusHistory: history,
         attachments: const [],
@@ -565,150 +636,357 @@ class MockDatabase {
     }
 
     MockAccount acc(String username) => accounts.firstWhere((a) => a.username == username);
+    String dateTag(DateTime d) =>
+        '${d.year}${d.month.toString().padLeft(2, '0')}${d.day.toString().padLeft(2, '0')}';
 
+    // 1. Critical — awaiting admin approval on the web dashboard.
     seed(
       id: 1,
-      number: 'T-${now.year}-0001',
-      title: "Laptop won't connect to office WiFi",
-      description: 'My laptop keeps disconnecting from the OGDCL-Staff network every few minutes.',
+      number: 'C-0001-IT-${dateTag(daysAgo(0, 5))}',
+      title: 'Server room cooling has completely failed',
+      description:
+          'The AC unit in the 2nd floor server room stopped working entirely; equipment temperature is climbing fast.',
       category: 'IT Support',
-      status: TicketStatus.resolved,
-      priority: TicketPriority.medium,
-      creator: acc('ibrahim'),
-      handler: acc('it.handler1'),
-      feedback: TicketFeedback(rating: 5, comment: 'Fixed quickly, thanks!', createdAt: daysAgo(1)),
-      createdAt: daysAgo(4),
-      updatedAt: daysAgo(1),
+      status: ComplaintStatus.pendingApproval,
+      severity: ComplaintSeverity.critical,
+      creator: acc('ayan'),
+      createdAt: daysAgo(0, 5),
+      updatedAt: daysAgo(0, 5),
       history: [
-        StatusHistoryEntry(toStatus: TicketStatus.assigned, note: 'Ticket created', changedBy: acc('ibrahim').displayName, changedAt: daysAgo(4)),
-        StatusHistoryEntry(fromStatus: TicketStatus.assigned, toStatus: TicketStatus.inProgress, changedBy: acc('it.handler1').displayName, changedAt: daysAgo(3)),
-        StatusHistoryEntry(fromStatus: TicketStatus.inProgress, toStatus: TicketStatus.resolved, note: 'Reset network adapter driver.', changedBy: acc('it.handler1').displayName, changedAt: daysAgo(1)),
+        StatusHistoryEntry(
+          toStatus: ComplaintStatus.pendingApproval,
+          note: 'Submitted — Critical severity requires admin approval before routing.',
+          changedBy: acc('ayan').displayName,
+          changedAt: daysAgo(0, 5),
+        ),
       ],
     );
 
+    // 2. Open — sitting in the department queue, available for any HR handler to pick up.
     seed(
       id: 2,
-      number: 'T-${now.year}-0002',
-      title: 'AC not cooling in room 204',
-      description: 'The air conditioning unit in room 204 has been blowing warm air since Monday.',
-      category: 'Maintenance',
-      status: TicketStatus.inProgress,
-      priority: TicketPriority.medium,
-      creator: acc('ibrahim'),
-      handler: acc('maint.handler1'),
-      createdAt: daysAgo(2),
-      updatedAt: daysAgo(1),
-      history: [
-        StatusHistoryEntry(toStatus: TicketStatus.assigned, note: 'Ticket created', changedBy: acc('ibrahim').displayName, changedAt: daysAgo(2)),
-        StatusHistoryEntry(fromStatus: TicketStatus.assigned, toStatus: TicketStatus.inProgress, changedBy: acc('maint.handler1').displayName, changedAt: daysAgo(1)),
-      ],
-    );
-
-    seed(
-      id: 3,
-      number: 'T-${now.year}-0003',
-      title: 'Need updated employment letter',
-      description: 'I need an updated employment verification letter for a bank loan application.',
-      category: 'HR',
-      status: TicketStatus.assigned,
-      priority: TicketPriority.low,
-      creator: acc('umer'),
-      handler: acc('hr.handler1'),
-      createdAt: daysAgo(1),
-      updatedAt: daysAgo(1),
-      history: [
-        StatusHistoryEntry(toStatus: TicketStatus.assigned, note: 'Ticket created', changedBy: acc('umer').displayName, changedAt: daysAgo(1)),
-      ],
-    );
-
-    seed(
-      id: 4,
-      number: 'T-${now.year}-0004',
-      title: 'Broken chair in conference room B',
-      description: 'One of the chairs in conference room B has a broken wheel and is unsafe to use.',
-      category: 'Facilities',
-      status: TicketStatus.closed,
-      priority: TicketPriority.medium,
-      creator: acc('ayan'),
-      handler: acc('fac.handler1'),
-      feedback: TicketFeedback(rating: 4, comment: 'Resolved, thanks.', createdAt: daysAgo(2)),
-      createdAt: daysAgo(6),
-      updatedAt: daysAgo(2),
-      history: [
-        StatusHistoryEntry(toStatus: TicketStatus.assigned, note: 'Ticket created', changedBy: acc('ayan').displayName, changedAt: daysAgo(6)),
-        StatusHistoryEntry(fromStatus: TicketStatus.assigned, toStatus: TicketStatus.inProgress, changedBy: acc('fac.handler1').displayName, changedAt: daysAgo(5)),
-        StatusHistoryEntry(fromStatus: TicketStatus.inProgress, toStatus: TicketStatus.resolved, changedBy: acc('fac.handler1').displayName, changedAt: daysAgo(3)),
-        StatusHistoryEntry(fromStatus: TicketStatus.resolved, toStatus: TicketStatus.closed, changedBy: acc('ayan').displayName, changedAt: daysAgo(2)),
-      ],
-    );
-
-    seed(
-      id: 5,
-      number: 'T-${now.year}-0005',
-      title: 'Ceiling leak near stairwell',
-      description: 'Water is dripping from the ceiling near the east stairwell on the 2nd floor.',
-      category: 'Civil Works',
-      status: TicketStatus.assigned,
-      priority: TicketPriority.high,
-      creator: acc('umer'),
-      handler: acc('civil.handler1'),
-      createdAt: daysAgo(0, 7),
-      updatedAt: daysAgo(0, 7),
-      history: [
-        StatusHistoryEntry(toStatus: TicketStatus.assigned, note: 'Ticket created', changedBy: acc('umer').displayName, changedAt: daysAgo(0, 7)),
-      ],
-    );
-
-    seed(
-      id: 6,
-      number: 'T-${now.year}-0006',
-      title: 'Printer offline on 3rd floor',
-      description: 'The shared HP printer on the 3rd floor shows as offline for everyone.',
-      category: 'IT Support',
-      status: TicketStatus.inProgress,
-      priority: TicketPriority.medium,
-      creator: acc('ayan'),
-      handler: acc('it.handler2'),
-      createdAt: daysAgo(1),
-      updatedAt: daysAgo(0, 8),
-      history: [
-        StatusHistoryEntry(toStatus: TicketStatus.assigned, note: 'Ticket created', changedBy: acc('ayan').displayName, changedAt: daysAgo(1)),
-        StatusHistoryEntry(fromStatus: TicketStatus.assigned, toStatus: TicketStatus.inProgress, changedBy: acc('it.handler2').displayName, changedAt: daysAgo(0, 8)),
-      ],
-    );
-
-    seed(
-      id: 7,
-      number: 'T-${now.year}-0007',
-      title: 'Crack in parking area pavement',
-      description: 'A large crack has formed in the visitor parking area, near the main gate.',
-      category: 'Civil Works',
-      status: TicketStatus.resolved,
-      priority: TicketPriority.high,
-      creator: acc('ibrahim'),
-      handler: acc('civil.handler1'),
-      createdAt: daysAgo(5),
-      updatedAt: daysAgo(0, 10),
-      history: [
-        StatusHistoryEntry(toStatus: TicketStatus.assigned, note: 'Ticket created', changedBy: acc('ibrahim').displayName, changedAt: daysAgo(5)),
-        StatusHistoryEntry(fromStatus: TicketStatus.assigned, toStatus: TicketStatus.inProgress, changedBy: acc('civil.handler1').displayName, changedAt: daysAgo(3)),
-        StatusHistoryEntry(fromStatus: TicketStatus.inProgress, toStatus: TicketStatus.resolved, note: 'Patched and resurfaced.', changedBy: acc('civil.handler1').displayName, changedAt: daysAgo(0, 10)),
-      ],
-    );
-
-    seed(
-      id: 8,
-      number: 'T-${now.year}-0008',
+      number: 'L-0002-HR-${dateTag(daysAgo(0, 6))}',
       title: 'Question about leave policy',
       description: 'Could someone clarify how unused annual leave carries over into next year?',
       category: 'HR',
-      status: TicketStatus.open,
-      priority: TicketPriority.low,
+      status: ComplaintStatus.open,
+      severity: ComplaintSeverity.low,
       creator: acc('umer'),
       createdAt: daysAgo(0, 6),
       updatedAt: daysAgo(0, 6),
       history: [
-        StatusHistoryEntry(toStatus: TicketStatus.open, note: 'Ticket created', changedBy: acc('umer').displayName, changedAt: daysAgo(0, 6)),
+        StatusHistoryEntry(
+          toStatus: ComplaintStatus.open,
+          note: 'Complaint submitted.',
+          changedBy: acc('umer').displayName,
+          changedAt: daysAgo(0, 6),
+        ),
+      ],
+    );
+
+    // 3. Assigned, well within SLA.
+    seed(
+      id: 3,
+      number: 'M-0003-MNT-${dateTag(daysAgo(2))}',
+      title: 'AC not cooling in room 204',
+      description: 'The air conditioning unit in room 204 has been blowing warm air since Monday.',
+      category: 'Maintenance',
+      status: ComplaintStatus.assigned,
+      severity: ComplaintSeverity.medium,
+      creator: acc('ibrahim'),
+      handler: acc('maint.handler1'),
+      assignedAt: daysAgo(2),
+      createdAt: daysAgo(2),
+      updatedAt: daysAgo(2),
+      history: [
+        StatusHistoryEntry(
+          toStatus: ComplaintStatus.open,
+          note: 'Complaint submitted.',
+          changedBy: acc('ibrahim').displayName,
+          changedAt: daysAgo(2),
+        ),
+        StatusHistoryEntry(
+          fromStatus: ComplaintStatus.open,
+          toStatus: ComplaintStatus.assigned,
+          note: 'Self-assigned by ${acc('maint.handler1').displayName}',
+          changedBy: acc('maint.handler1').displayName,
+          changedAt: daysAgo(2),
+        ),
+      ],
+    );
+
+    // 4. In progress, Urgent (24h SLA) but assigned 3 days ago — deliberately overdue.
+    seed(
+      id: 4,
+      number: 'U-0004-CIV-${dateTag(daysAgo(3))}',
+      title: 'Ceiling leak near stairwell',
+      description: 'Water is dripping from the ceiling near the east stairwell on the 2nd floor.',
+      category: 'Civil Works',
+      status: ComplaintStatus.inProgress,
+      severity: ComplaintSeverity.urgent,
+      creator: acc('umer'),
+      handler: acc('civil.handler1'),
+      assignedAt: daysAgo(3),
+      createdAt: daysAgo(3),
+      updatedAt: daysAgo(1),
+      history: [
+        StatusHistoryEntry(
+          toStatus: ComplaintStatus.open,
+          note: 'Complaint submitted.',
+          changedBy: acc('umer').displayName,
+          changedAt: daysAgo(3),
+        ),
+        StatusHistoryEntry(
+          fromStatus: ComplaintStatus.open,
+          toStatus: ComplaintStatus.assigned,
+          note: 'Self-assigned by ${acc('civil.handler1').displayName}',
+          changedBy: acc('civil.handler1').displayName,
+          changedAt: daysAgo(3),
+        ),
+        StatusHistoryEntry(
+          fromStatus: ComplaintStatus.assigned,
+          toStatus: ComplaintStatus.inProgress,
+          changedBy: acc('civil.handler1').displayName,
+          changedAt: daysAgo(1),
+        ),
+      ],
+    );
+
+    // 5. In progress, Medium (72h SLA), assigned 4 days ago — also overdue.
+    seed(
+      id: 5,
+      number: 'M-0005-IT-${dateTag(daysAgo(4))}',
+      title: 'Printer offline on 3rd floor',
+      description: 'The shared HP printer on the 3rd floor shows as offline for everyone.',
+      category: 'IT Support',
+      status: ComplaintStatus.inProgress,
+      severity: ComplaintSeverity.medium,
+      creator: acc('ayan'),
+      handler: acc('it.handler2'),
+      assignedAt: daysAgo(4),
+      createdAt: daysAgo(4),
+      updatedAt: daysAgo(0, 8),
+      history: [
+        StatusHistoryEntry(
+          toStatus: ComplaintStatus.open,
+          note: 'Complaint submitted.',
+          changedBy: acc('ayan').displayName,
+          changedAt: daysAgo(4),
+        ),
+        StatusHistoryEntry(
+          fromStatus: ComplaintStatus.open,
+          toStatus: ComplaintStatus.assigned,
+          note: 'Self-assigned by ${acc('it.handler2').displayName}',
+          changedBy: acc('it.handler2').displayName,
+          changedAt: daysAgo(4),
+        ),
+        StatusHistoryEntry(
+          fromStatus: ComplaintStatus.assigned,
+          toStatus: ComplaintStatus.inProgress,
+          changedBy: acc('it.handler2').displayName,
+          changedAt: daysAgo(0, 8),
+        ),
+      ],
+    );
+
+    // 6. Resolved with feedback already left.
+    seed(
+      id: 6,
+      number: 'M-0006-IT-${dateTag(daysAgo(4))}',
+      title: "Laptop won't connect to office WiFi",
+      description: 'My laptop keeps disconnecting from the OGDCL-Staff network every few minutes.',
+      category: 'IT Support',
+      status: ComplaintStatus.resolved,
+      severity: ComplaintSeverity.medium,
+      creator: acc('ibrahim'),
+      handler: acc('it.handler1'),
+      assignedAt: daysAgo(4),
+      feedback: ComplaintFeedback(rating: 5, comment: 'Fixed quickly, thanks!', createdAt: daysAgo(1)),
+      createdAt: daysAgo(4),
+      updatedAt: daysAgo(1),
+      history: [
+        StatusHistoryEntry(
+          toStatus: ComplaintStatus.open,
+          note: 'Complaint submitted.',
+          changedBy: acc('ibrahim').displayName,
+          changedAt: daysAgo(4),
+        ),
+        StatusHistoryEntry(
+          fromStatus: ComplaintStatus.open,
+          toStatus: ComplaintStatus.assigned,
+          note: 'Self-assigned by ${acc('it.handler1').displayName}',
+          changedBy: acc('it.handler1').displayName,
+          changedAt: daysAgo(4),
+        ),
+        StatusHistoryEntry(
+          fromStatus: ComplaintStatus.assigned,
+          toStatus: ComplaintStatus.inProgress,
+          changedBy: acc('it.handler1').displayName,
+          changedAt: daysAgo(3),
+        ),
+        StatusHistoryEntry(
+          fromStatus: ComplaintStatus.inProgress,
+          toStatus: ComplaintStatus.resolved,
+          note: 'Reset network adapter driver.',
+          changedBy: acc('it.handler1').displayName,
+          changedAt: daysAgo(1),
+        ),
+      ],
+    );
+
+    // 7. Resolved, feedback not left yet (so "Leave Feedback" is testable).
+    seed(
+      id: 7,
+      number: 'U-0007-CIV-${dateTag(daysAgo(5))}',
+      title: 'Crack in parking area pavement',
+      description: 'A large crack has formed in the visitor parking area, near the main gate.',
+      category: 'Civil Works',
+      status: ComplaintStatus.resolved,
+      severity: ComplaintSeverity.urgent,
+      creator: acc('ibrahim'),
+      handler: acc('civil.handler1'),
+      assignedAt: daysAgo(5),
+      createdAt: daysAgo(5),
+      updatedAt: daysAgo(0, 10),
+      history: [
+        StatusHistoryEntry(
+          toStatus: ComplaintStatus.open,
+          note: 'Complaint submitted.',
+          changedBy: acc('ibrahim').displayName,
+          changedAt: daysAgo(5),
+        ),
+        StatusHistoryEntry(
+          fromStatus: ComplaintStatus.open,
+          toStatus: ComplaintStatus.assigned,
+          note: 'Self-assigned by ${acc('civil.handler1').displayName}',
+          changedBy: acc('civil.handler1').displayName,
+          changedAt: daysAgo(5),
+        ),
+        StatusHistoryEntry(
+          fromStatus: ComplaintStatus.assigned,
+          toStatus: ComplaintStatus.inProgress,
+          changedBy: acc('civil.handler1').displayName,
+          changedAt: daysAgo(3),
+        ),
+        StatusHistoryEntry(
+          fromStatus: ComplaintStatus.inProgress,
+          toStatus: ComplaintStatus.resolved,
+          note: 'Patched and resurfaced.',
+          changedBy: acc('civil.handler1').displayName,
+          changedAt: daysAgo(0, 10),
+        ),
+      ],
+    );
+
+    // 8. Closed with feedback.
+    seed(
+      id: 8,
+      number: 'M-0008-FAC-${dateTag(daysAgo(6))}',
+      title: 'Broken chair in conference room B',
+      description: 'One of the chairs in conference room B has a broken wheel and is unsafe to use.',
+      category: 'Facilities',
+      status: ComplaintStatus.closed,
+      severity: ComplaintSeverity.medium,
+      creator: acc('ayan'),
+      handler: acc('fac.handler1'),
+      assignedAt: daysAgo(6),
+      feedback: ComplaintFeedback(rating: 4, comment: 'Resolved, thanks.', createdAt: daysAgo(2)),
+      createdAt: daysAgo(6),
+      updatedAt: daysAgo(2),
+      history: [
+        StatusHistoryEntry(
+          toStatus: ComplaintStatus.open,
+          note: 'Complaint submitted.',
+          changedBy: acc('ayan').displayName,
+          changedAt: daysAgo(6),
+        ),
+        StatusHistoryEntry(
+          fromStatus: ComplaintStatus.open,
+          toStatus: ComplaintStatus.assigned,
+          note: 'Self-assigned by ${acc('fac.handler1').displayName}',
+          changedBy: acc('fac.handler1').displayName,
+          changedAt: daysAgo(6),
+        ),
+        StatusHistoryEntry(
+          fromStatus: ComplaintStatus.assigned,
+          toStatus: ComplaintStatus.inProgress,
+          changedBy: acc('fac.handler1').displayName,
+          changedAt: daysAgo(5),
+        ),
+        StatusHistoryEntry(
+          fromStatus: ComplaintStatus.inProgress,
+          toStatus: ComplaintStatus.resolved,
+          changedBy: acc('fac.handler1').displayName,
+          changedAt: daysAgo(3),
+        ),
+        StatusHistoryEntry(
+          fromStatus: ComplaintStatus.resolved,
+          toStatus: ComplaintStatus.closed,
+          changedBy: acc('ayan').displayName,
+          changedAt: daysAgo(2),
+        ),
+      ],
+    );
+
+    // 9. Rejected during admin approval (Critical severity that didn't pan out).
+    seed(
+      id: 9,
+      number: 'C-0009-FAC-${dateTag(daysAgo(3))}',
+      title: 'Water leakage flagged as critical in east washroom',
+      description: 'Reported as an emergency leak near the east washroom.',
+      category: 'Facilities',
+      status: ComplaintStatus.rejected,
+      severity: ComplaintSeverity.critical,
+      creator: acc('umer'),
+      rejectionReason:
+          'Downgraded — this duplicates an existing Civil Works complaint already in progress.',
+      createdAt: daysAgo(3),
+      updatedAt: daysAgo(2),
+      history: [
+        StatusHistoryEntry(
+          toStatus: ComplaintStatus.pendingApproval,
+          note: 'Submitted — Critical severity requires admin approval before routing.',
+          changedBy: acc('umer').displayName,
+          changedAt: daysAgo(3),
+        ),
+        StatusHistoryEntry(
+          fromStatus: ComplaintStatus.pendingApproval,
+          toStatus: ComplaintStatus.rejected,
+          note: 'Downgraded — duplicates an existing Civil Works complaint already in progress.',
+          changedBy: 'System Admin',
+          changedAt: daysAgo(2),
+        ),
+      ],
+    );
+
+    // 10. Assigned, Low severity, plenty of SLA headroom.
+    seed(
+      id: 10,
+      number: 'L-0010-HR-${dateTag(daysAgo(1))}',
+      title: 'Need updated employment letter',
+      description: 'I need an updated employment verification letter for a bank loan application.',
+      category: 'HR',
+      status: ComplaintStatus.assigned,
+      severity: ComplaintSeverity.low,
+      creator: acc('umer'),
+      handler: acc('hr.handler1'),
+      assignedAt: daysAgo(1),
+      createdAt: daysAgo(1),
+      updatedAt: daysAgo(1),
+      history: [
+        StatusHistoryEntry(
+          toStatus: ComplaintStatus.open,
+          note: 'Complaint submitted.',
+          changedBy: acc('umer').displayName,
+          changedAt: daysAgo(1),
+        ),
+        StatusHistoryEntry(
+          fromStatus: ComplaintStatus.open,
+          toStatus: ComplaintStatus.assigned,
+          note: 'Self-assigned by ${acc('hr.handler1').displayName}',
+          changedBy: acc('hr.handler1').displayName,
+          changedAt: daysAgo(1),
+        ),
       ],
     );
   }
@@ -738,53 +1016,53 @@ class MockDatabase {
 
     seedNotif(
       username: 'it.handler1',
-      type: NotificationType.ticketAssigned,
-      title: 'New ticket T-${now.year}-0001',
-      body: '"Laptop won\'t connect to office WiFi" (IT Support) has been assigned to you.',
+      type: NotificationType.complaintAssigned,
+      title: 'Complaint M-0006-IT picked up',
+      body: '"Laptop won\'t connect to office WiFi" is now yours to work.',
       createdAt: now.subtract(const Duration(days: 4)),
       read: true,
     );
     seedNotif(
       username: 'ibrahim',
       type: NotificationType.feedbackRequested,
-      title: 'How was ticket T-${now.year}-0001 handled?',
+      title: 'How was complaint M-0006-IT handled?',
       body: 'Your complaint has been resolved. Please rate how it was handled.',
       createdAt: now.subtract(const Duration(days: 1)),
       read: true,
     );
     seedNotif(
-      username: 'maint.handler1',
-      type: NotificationType.ticketAssigned,
-      title: 'New ticket T-${now.year}-0002',
-      body: '"AC not cooling in room 204" (Maintenance) has been assigned to you.',
-      createdAt: now.subtract(const Duration(days: 2)),
+      username: 'civil.handler1',
+      type: NotificationType.complaintOverdue,
+      title: 'Complaint U-0004-CIV is overdue',
+      body: '"Ceiling leak near stairwell" (Urgent) has exceeded its 24-hour SLA.',
+      createdAt: now.subtract(const Duration(hours: 6)),
     );
     seedNotif(
-      username: 'civil.handler1',
-      type: NotificationType.ticketAssigned,
-      title: 'New ticket T-${now.year}-0005',
-      body: '"Ceiling leak near stairwell" (Civil Works) has been assigned to you.',
-      createdAt: now.subtract(const Duration(hours: 7)),
+      username: 'it.handler2',
+      type: NotificationType.complaintOverdue,
+      title: 'Complaint M-0005-IT is overdue',
+      body: '"Printer offline on 3rd floor" (Medium) has exceeded its 3-day SLA.',
+      createdAt: now.subtract(const Duration(hours: 8)),
     );
     seedNotif(
       username: 'ibrahim',
       type: NotificationType.feedbackRequested,
-      title: 'How was ticket T-${now.year}-0007 handled?',
+      title: 'How was complaint U-0007-CIV handled?',
       body: 'Your complaint has been resolved. Please rate how it was handled.',
       createdAt: now.subtract(const Duration(hours: 10)),
     );
     seedNotif(
       username: 'umer',
-      type: NotificationType.ticketAssigned,
-      title: 'Ticket T-${now.year}-0003 assigned',
-      body: '"Need updated employment letter" is now with HR.',
-      createdAt: now.subtract(const Duration(days: 1)),
+      type: NotificationType.complaintStatusChanged,
+      title: 'Complaint C-0009-FAC rejected',
+      body: 'Downgraded — duplicates an existing Civil Works complaint already in progress.',
+      createdAt: now.subtract(const Duration(days: 2)),
       read: true,
     );
     seedNotif(
       username: 'ayan',
-      type: NotificationType.ticketClosed,
-      title: 'Ticket T-${now.year}-0004 closed',
+      type: NotificationType.complaintClosed,
+      title: 'Complaint M-0008-FAC closed',
       body: '"Broken chair in conference room B" has been closed.',
       createdAt: now.subtract(const Duration(days: 2)),
     );
