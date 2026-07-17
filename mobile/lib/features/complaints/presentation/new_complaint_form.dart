@@ -214,6 +214,18 @@ class _NewComplaintFormState extends ConsumerState<NewComplaintForm> {
                   avatar: CircleAvatar(backgroundColor: severity.color),
                   selected: _severity == severity,
                   onSelected: (_) => setState(() => _severity = severity),
+                  backgroundColor: Colors.transparent,
+                  selectedColor: Colors.transparent,
+                  elevation: 0,
+                  pressElevation: 0,
+                  shadowColor: Colors.transparent,
+                  surfaceTintColor: Colors.transparent,
+                  side: BorderSide(
+                    color: _severity == severity
+                        ? severity.color
+                        : Colors.black.withValues(alpha: 0.15),
+                    width: _severity == severity ? 1.4 : 1,
+                  ),
                 ),
             ],
           ),
