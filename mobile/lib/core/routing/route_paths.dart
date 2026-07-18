@@ -4,10 +4,14 @@ class RoutePaths {
   static const splash = '/splash';
   static const login = '/login';
   static const home = '/home';
-  static const tickets = '/tickets';
+  static const complaints = '/complaints';
+  static const parking = '/parking';
+  static const visitors = '/visitors';
   static const notifications = '/notifications';
-  static const newTicket = '/tickets/new';
 
-  static String ticketDetail(int id) => '/tickets/$id';
+  // New Complaint has no route of its own — it opens as a modal popup from
+  // wherever the circular "New Complaint" button lives (see AppShell).
+
+  static String complaintDetail(int id) => '/complaints/$id';
   static String comingSoon(String module) => '/coming-soon/$module';
 }

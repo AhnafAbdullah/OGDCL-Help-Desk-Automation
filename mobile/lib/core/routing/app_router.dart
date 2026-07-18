@@ -7,18 +7,16 @@ import '../../features/auth/presentation/auth_state.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/splash_screen.dart';
 import '../../features/coming_soon/presentation/coming_soon_screen.dart';
+import '../../features/complaints/presentation/complaint_detail_screen.dart';
+import '../../features/complaints/presentation/complaints_list_screen.dart';
 import '../../features/dashboard/presentation/dashboard_screen.dart';
 import '../../features/notifications/presentation/notifications_screen.dart';
+import '../../features/parking/presentation/parking_screen.dart';
 import '../../features/shell/presentation/app_shell.dart';
-import '../../features/tickets/presentation/new_ticket_screen.dart';
-import '../../features/tickets/presentation/ticket_detail_screen.dart';
-import '../../features/tickets/presentation/tickets_list_screen.dart';
+import '../../features/visitors/presentation/visitors_screen.dart';
 import 'route_paths.dart';
 
 const _comingSoonModules = <String, (String, IconData)>{
-  'visitors': ('Visitors', Icons.badge_outlined),
-  'gate-desk': ('Gate Desk', Icons.shield_outlined),
-  'smart-parking': ('Smart Parking', Icons.local_parking_outlined),
   'settings': ('Settings', Icons.settings_outlined),
 };
 
@@ -67,13 +65,12 @@ final routerProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(path: RoutePaths.splash, builder: (context, state) => const SplashScreen()),
       GoRoute(path: RoutePaths.login, builder: (context, state) => const LoginScreen()),
-      // Declared before `/tickets/:id` so the literal "new" segment wins the match.
-      GoRoute(path: RoutePaths.newTicket, builder: (context, state) => const NewTicketScreen()),
+      // New Complaint opens as a modal popup (see NewComplaintForm), not a route.
       GoRoute(
-        path: '/tickets/:id',
+        path: '/complaints/:id',
         builder: (context, state) {
           final id = int.tryParse(state.pathParameters['id'] ?? '') ?? 0;
-          return TicketDetailScreen(ticketId: id);
+          return ComplaintDetailScreen(complaintId: id);
         },
       ),
       GoRoute(
@@ -91,7 +88,18 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state, child) => AppShell(child: child),
         routes: [
           GoRoute(path: RoutePaths.home, builder: (context, state) => const DashboardScreen()),
-          GoRoute(path: RoutePaths.tickets, builder: (context, state) => const TicketsListScreen()),
+          GoRoute(
+            path: RoutePaths.complaints,
+            builder: (context, state) => const ComplaintsListScreen(),
+          ),
+          GoRoute(
+            path: RoutePaths.parking,
+            builder: (context, state) => const ParkingScreen(),
+          ),
+          GoRoute(
+            path: RoutePaths.visitors,
+            builder: (context, state) => const VisitorsScreen(),
+          ),
           GoRoute(
             path: RoutePaths.notifications,
             builder: (context, state) => const NotificationsScreen(),

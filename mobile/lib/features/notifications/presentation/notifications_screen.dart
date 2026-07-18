@@ -13,24 +13,22 @@ class NotificationsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(notificationsControllerProvider);
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Notifications')),
-      body: RefreshIndicator(
-        onRefresh: () => ref.read(notificationsControllerProvider.notifier).refresh(),
-        child: state.items.isEmpty && !state.isLoading
-            ? ListView(
-                children: const [
-                  SizedBox(height: 80),
-                  EmptyView(message: "You're all caught up.", icon: Icons.notifications_none),
-                ],
-              )
-            : ListView.separated(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                itemCount: state.items.length,
-                separatorBuilder: (_, _) => const Divider(height: 1),
-                itemBuilder: (context, index) => _NotificationTile(notification: state.items[index]),
-              ),
-      ),
+    // No Scaffold/AppBar here — the surrounding AppShell provides those.
+    return RefreshIndicator(
+      onRefresh: () => ref.read(notificationsControllerProvider.notifier).refresh(),
+      child: state.items.isEmpty && !state.isLoading
+          ? ListView(
+              children: const [
+                SizedBox(height: 80),
+                EmptyView(message: "You're all caught up.", icon: Icons.notifications_none),
+              ],
+            )
+          : ListView.separated(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              itemCount: state.items.length,
+              separatorBuilder: (_, _) => const Divider(height: 1),
+              itemBuilder: (context, index) => _NotificationTile(notification: state.items[index]),
+            ),
     );
   }
 }

@@ -1,5 +1,5 @@
 name: flutter_hdworkflow
-description: "OGDCL Help Desk mobile client — ticket submission, tracking, and resolution."
+description: "OGDCL Help Desk mobile client — complaint submission, tracking, and resolution."
 publish_to: 'none'
 
 version: 1.0.0+1
@@ -32,9 +32,14 @@ dependencies:
   intl: ^0.19.0
 
   # Attachments: pick, locate, and open files
-  file_picker: ^8.0.0
+  file_picker: ^11.0.0
   path_provider: ^2.1.5
   open_filex: ^4.3.4
+
+  # Decrypting + integrity-checking the build attribution blob
+  # (assets/attrib.bin). Both are pure Dart — no platform channels.
+  encrypt: ^5.0.3
+  crypto: ^3.0.6
 
 dev_dependencies:
   flutter_test:
@@ -51,6 +56,7 @@ flutter:
 
   assets:
     - assets/logo.png
+    - assets/attrib.bin
 
 flutter_launcher_icons:
   android: true

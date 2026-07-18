@@ -4,21 +4,31 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/routing/route_paths.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../shared/widgets/app_logo.dart';
+import '../../../shared/widgets/user_avatar.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../auth/presentation/auth_state.dart';
+import '../../complaints/presentation/new_complaint_form.dart';
 import '../../notifications/presentation/notifications_controller.dart';
 
-/// Persistent chrome (app bar, bottom nav, drawer) around the three
-/// Help-Desk tabs. Reached ticket detail / new-complaint / coming-soon
-/// screens push full-screen on top of this instead of nesting inside it.
+/// Persistent chrome (app bar, bottom nav, drawer, New Complaint button)
+/// around the app's five tabs. Complaint detail / coming-soon screens
+/// push full-screen on top of this instead of nesting inside it.
 class AppShell extends ConsumerWidget {
   const AppShell({super.key, required this.child});
 
   final Widget child;
 
-  static const _tabPaths = [RoutePaths.home, RoutePaths.tickets, RoutePaths.notifications];
-  static const _titles = ['Dashboard', 'Tickets', 'Notifications'];
+  static const _tabPaths = [
+    RoutePaths.home,
+    RoutePaths.complaints,
+    RoutePaths.parking,
+    RoutePaths.visitors,
+    RoutePaths.notifications,
+  ];
+  static const _titles = ['Dashboard', 'Complaints', 'Smart Parking', 'Visitors', 'Notifications'];
+
+  /// Tabs where the circular New Complaint button makes sense.
+  static const _fabTabs = {0, 1};
 
   int _indexForLocation(String location) {
     final index = _tabPaths.indexWhere((path) => location.startsWith(path));
@@ -36,7 +46,7 @@ class AppShell extends ConsumerWidget {
       appBar: AppBar(
         title: Text(_titles[selectedIndex]),
         actions: [
-          if (selectedIndex != 2)
+          if (selectedIndex != _tabPaths.length - 1)
             IconButton(
               onPressed: () => context.go(RoutePaths.notifications),
               icon: Badge(
@@ -49,9 +59,19 @@ class AppShell extends ConsumerWidget {
       ),
       drawer: _AppDrawer(authState: authState),
       body: child,
+      floatingActionButton: _fabTabs.contains(selectedIndex)
+          ? FloatingActionButton(
+              onPressed: () => showNewComplaintSheet(context),
+              shape: const CircleBorder(),
+              tooltip: 'New Complaint',
+              child: const Icon(Icons.add),
+            )
+          : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       bottomNavigationBar: NavigationBar(
         selectedIndex: selectedIndex,
         onDestinationSelected: (index) => context.go(_tabPaths[index]),
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         destinations: [
           const NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
@@ -59,9 +79,19 @@ class AppShell extends ConsumerWidget {
             label: 'Home',
           ),
           const NavigationDestination(
-            icon: Icon(Icons.confirmation_number_outlined),
-            selectedIcon: Icon(Icons.confirmation_number),
-            label: 'Tickets',
+            icon: Icon(Icons.assignment_outlined),
+            selectedIcon: Icon(Icons.assignment),
+            label: 'Complaints',
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.local_parking_outlined),
+            selectedIcon: Icon(Icons.local_parking),
+            label: 'Parking',
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.badge_outlined),
+            selectedIcon: Icon(Icons.badge),
+            label: 'Visitors',
           ),
           NavigationDestination(
             icon: Badge(
@@ -98,7 +128,7 @@ class _AppDrawer extends ConsumerWidget {
               color: AppColors.brand,
               child: Row(
                 children: [
-                  const AppLogo(size: 48),
+                  UserAvatar(name: user?.displayName ?? '', radius: 26),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
@@ -114,14 +144,16 @@ class _AppDrawer extends ConsumerWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                         Text(
-                          user == null
-                              ? ''
-                              : (user.department != null
-                                  ? '${user.role.label} • ${user.department}'
-                                  : user.role.label),
+                          user == null ? '' : (user.designation ?? user.role.label),
                           style: const TextStyle(color: Colors.white70, fontSize: 12),
                           overflow: TextOverflow.ellipsis,
                         ),
+                        if (user?.department != null)
+                          Text(
+                            user!.department!,
+                            style: const TextStyle(color: Colors.white54, fontSize: 11),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                       ],
                     ),
                   ),
@@ -133,19 +165,14 @@ class _AppDrawer extends ConsumerWidget {
                 padding: EdgeInsets.zero,
                 children: [
                   ListTile(
-                    leading: const Icon(Icons.badge_outlined),
-                    title: const Text('Visitors'),
-                    onTap: () => _openComingSoon(context, 'visitors'),
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.shield_outlined),
-                    title: const Text('Gate Desk'),
-                    onTap: () => _openComingSoon(context, 'gate-desk'),
-                  ),
-                  ListTile(
                     leading: const Icon(Icons.local_parking_outlined),
                     title: const Text('Smart Parking'),
-                    onTap: () => _openComingSoon(context, 'smart-parking'),
+                    onTap: () => _goTab(context, RoutePaths.parking),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.badge_outlined),
+                    title: const Text('Visitors'),
+                    onTap: () => _goTab(context, RoutePaths.visitors),
                   ),
                   const Divider(),
                   ListTile(
@@ -170,14 +197,31 @@ class _AppDrawer extends ConsumerWidget {
   }
 
   void _openComingSoon(BuildContext context, String module) {
+    // Capture the router before popping the drawer — after the pop this
+    // drawer's context is being disposed and can't resolve GoRouter.
+    final router = GoRouter.of(context);
     Navigator.of(context).pop();
-    context.push(RoutePaths.comingSoon(module));
+    router.push(RoutePaths.comingSoon(module));
+  }
+
+  void _goTab(BuildContext context, String path) {
+    // Same capture-before-pop rule as _openComingSoon.
+    final router = GoRouter.of(context);
+    Navigator.of(context).pop();
+    router.go(path);
   }
 
   Future<void> _confirmLogout(BuildContext context, WidgetRef ref) async {
-    Navigator.of(context).pop();
+    // Capture the auth controller and navigator BEFORE popping the drawer.
+    // The pop disposes this _AppDrawer (and its `ref`/`context`), so reading
+    // the provider through `ref` after the dialog closes would hit a defunct
+    // ref and silently do nothing — which is exactly what made logout appear
+    // to "do nothing". The controller object itself outlives the widget.
+    final authController = ref.read(authControllerProvider.notifier);
+    final navigator = Navigator.of(context);
+    navigator.pop(); // close the drawer
     final confirmed = await showDialog<bool>(
-      context: context,
+      context: navigator.context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Log Out'),
         content: const Text('Are you sure you want to log out?'),
@@ -194,7 +238,7 @@ class _AppDrawer extends ConsumerWidget {
       ),
     );
     if (confirmed == true) {
-      await ref.read(authControllerProvider.notifier).logout();
+      await authController.logout();
     }
   }
 }

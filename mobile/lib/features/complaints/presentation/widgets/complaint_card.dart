@@ -3,20 +3,20 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/routing/route_paths.dart';
 import '../../../../core/utils/formatters.dart';
-import '../../../../domain/ticket.dart';
+import '../../../../domain/complaint.dart';
 import '../../../../shared/widgets/status_badge.dart';
 
-class TicketCard extends StatelessWidget {
-  const TicketCard({super.key, required this.ticket});
+class ComplaintCard extends StatelessWidget {
+  const ComplaintCard({super.key, required this.complaint});
 
-  final TicketSummary ticket;
+  final ComplaintSummary complaint;
 
   @override
   Widget build(BuildContext context) {
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: () => context.push(RoutePaths.ticketDetail(ticket.id)),
+        onTap: () => context.push(RoutePaths.complaintDetail(complaint.id)),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Column(
@@ -26,7 +26,7 @@ class TicketCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      ticket.ticketNumber,
+                      complaint.complaintNumber,
                       style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         color: Colors.black54,
@@ -34,29 +34,33 @@ class TicketCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  PriorityBadge(priority: ticket.priority),
+                  SeverityBadge(severity: complaint.severity),
                 ],
               ),
               const SizedBox(height: 6),
               Text(
-                ticket.title,
+                complaint.title,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
               ),
               const SizedBox(height: 4),
-              Text(ticket.category, style: const TextStyle(color: Colors.black54, fontSize: 13)),
+              Text(complaint.category, style: const TextStyle(color: Colors.black54, fontSize: 13)),
               const SizedBox(height: 10),
               Row(
                 children: [
-                  StatusBadge(status: ticket.status),
+                  StatusBadge(status: complaint.status),
+                  if (complaint.isOverdue) ...[
+                    const SizedBox(width: 8),
+                    const OverdueBadge(),
+                  ],
                   const Spacer(),
-                  if (ticket.assignedTo != null) ...[
+                  if (complaint.assignedTo != null) ...[
                     const Icon(Icons.person_outline, size: 14, color: Colors.black45),
                     const SizedBox(width: 3),
                     Flexible(
                       child: Text(
-                        ticket.assignedTo!,
+                        complaint.assignedTo!,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 12, color: Colors.black54),
                       ),
@@ -64,7 +68,7 @@ class TicketCard extends StatelessWidget {
                     const SizedBox(width: 10),
                   ],
                   Text(
-                    Formatters.relative(ticket.updatedAt),
+                    Formatters.relative(complaint.updatedAt),
                     style: const TextStyle(fontSize: 12, color: Colors.black45),
                   ),
                 ],

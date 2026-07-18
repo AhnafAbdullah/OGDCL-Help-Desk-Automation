@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/branding/attribution.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_logo.dart';
 import 'auth_controller.dart';
 import 'auth_state.dart';
@@ -65,19 +67,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     Text(
                       'OGDCL Help Desk',
                       textAlign: TextAlign.center,
-                      style: Theme.of(context)
-                          .textTheme
-                          .headlineSmall
-                          ?.copyWith(fontWeight: FontWeight.w700),
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.brand,
+                          ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'Sign in with your organization account',
                       textAlign: TextAlign.center,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodyMedium
-                          ?.copyWith(color: Colors.black54),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: AppColors.brand.withValues(alpha: 0.75),
+                          ),
                     ),
                     const SizedBox(height: 32),
                     TextFormField(
@@ -85,7 +86,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       textInputAction: TextInputAction.next,
                       decoration: const InputDecoration(
                         labelText: 'Username',
-                        prefixIcon: Icon(Icons.person_outline),
+                        prefixIcon: Icon(Icons.person_outline, color: AppColors.brand),
                       ),
                       validator: (value) =>
                           (value == null || value.trim().isEmpty) ? 'Username is required' : null,
@@ -98,11 +99,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       onFieldSubmitted: (_) => _submit(),
                       decoration: InputDecoration(
                         labelText: 'Password',
-                        prefixIcon: const Icon(Icons.lock_outline),
+                        prefixIcon: const Icon(Icons.lock_outline, color: AppColors.brand),
                         suffixIcon: IconButton(
-                          icon: Icon(_obscurePassword
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined),
+                          icon: Icon(
+                            _obscurePassword
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                            color: AppColors.brand,
+                          ),
                           onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                         ),
                       ),
@@ -123,6 +127,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             )
                           : const Text('Sign In'),
                     ),
+                    const SizedBox(height: 28),
+                    const AttributionLabel(),
                   ],
                 ),
               ),
@@ -130,6 +136,38 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Renders the build credit, decrypted from `assets/attrib.bin` at runtime.
+/// Kept in this file (rather than a shared widget) so that the login screen
+/// and the credit can't be decoupled by deleting one file.
+class AttributionLabel extends StatelessWidget {
+  const AttributionLabel({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<String>(
+      future: Attribution.load(),
+      builder: (context, snapshot) {
+        // Reserve the line's height while decrypting so the form doesn't jump.
+        final text = snapshot.data ?? '';
+        return SizedBox(
+          height: 18,
+          child: Center(
+            child: Text(
+              text,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: AppColors.brand.withValues(alpha: 0.55),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
