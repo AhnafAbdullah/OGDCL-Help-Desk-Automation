@@ -11,15 +11,24 @@ import '../../complaints/presentation/new_complaint_form.dart';
 import '../../notifications/presentation/notifications_controller.dart';
 
 /// Persistent chrome (app bar, bottom nav, drawer, New Complaint button)
-/// around the three Help-Desk tabs. Complaint detail / coming-soon screens
+/// around the app's five tabs. Complaint detail / coming-soon screens
 /// push full-screen on top of this instead of nesting inside it.
 class AppShell extends ConsumerWidget {
   const AppShell({super.key, required this.child});
 
   final Widget child;
 
-  static const _tabPaths = [RoutePaths.home, RoutePaths.complaints, RoutePaths.notifications];
-  static const _titles = ['Dashboard', 'Complaints', 'Notifications'];
+  static const _tabPaths = [
+    RoutePaths.home,
+    RoutePaths.complaints,
+    RoutePaths.parking,
+    RoutePaths.visitors,
+    RoutePaths.notifications,
+  ];
+  static const _titles = ['Dashboard', 'Complaints', 'Smart Parking', 'Visitors', 'Notifications'];
+
+  /// Tabs where the circular New Complaint button makes sense.
+  static const _fabTabs = {0, 1};
 
   int _indexForLocation(String location) {
     final index = _tabPaths.indexWhere((path) => location.startsWith(path));
@@ -37,7 +46,7 @@ class AppShell extends ConsumerWidget {
       appBar: AppBar(
         title: Text(_titles[selectedIndex]),
         actions: [
-          if (selectedIndex != 2)
+          if (selectedIndex != _tabPaths.length - 1)
             IconButton(
               onPressed: () => context.go(RoutePaths.notifications),
               icon: Badge(
@@ -50,18 +59,19 @@ class AppShell extends ConsumerWidget {
       ),
       drawer: _AppDrawer(authState: authState),
       body: child,
-      floatingActionButton: selectedIndex == 2
-          ? null
-          : FloatingActionButton(
+      floatingActionButton: _fabTabs.contains(selectedIndex)
+          ? FloatingActionButton(
               onPressed: () => showNewComplaintSheet(context),
               shape: const CircleBorder(),
               tooltip: 'New Complaint',
               child: const Icon(Icons.add),
-            ),
+            )
+          : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       bottomNavigationBar: NavigationBar(
         selectedIndex: selectedIndex,
         onDestinationSelected: (index) => context.go(_tabPaths[index]),
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         destinations: [
           const NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
@@ -72,6 +82,16 @@ class AppShell extends ConsumerWidget {
             icon: Icon(Icons.assignment_outlined),
             selectedIcon: Icon(Icons.assignment),
             label: 'Complaints',
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.local_parking_outlined),
+            selectedIcon: Icon(Icons.local_parking),
+            label: 'Parking',
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.badge_outlined),
+            selectedIcon: Icon(Icons.badge),
+            label: 'Visitors',
           ),
           NavigationDestination(
             icon: Badge(
@@ -145,19 +165,14 @@ class _AppDrawer extends ConsumerWidget {
                 padding: EdgeInsets.zero,
                 children: [
                   ListTile(
-                    leading: const Icon(Icons.badge_outlined),
-                    title: const Text('Visitors'),
-                    onTap: () => _openComingSoon(context, 'visitors'),
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.shield_outlined),
-                    title: const Text('Gate Desk'),
-                    onTap: () => _openComingSoon(context, 'gate-desk'),
-                  ),
-                  ListTile(
                     leading: const Icon(Icons.local_parking_outlined),
                     title: const Text('Smart Parking'),
-                    onTap: () => _openComingSoon(context, 'smart-parking'),
+                    onTap: () => _goTab(context, RoutePaths.parking),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.badge_outlined),
+                    title: const Text('Visitors'),
+                    onTap: () => _goTab(context, RoutePaths.visitors),
                   ),
                   const Divider(),
                   ListTile(
@@ -187,6 +202,13 @@ class _AppDrawer extends ConsumerWidget {
     final router = GoRouter.of(context);
     Navigator.of(context).pop();
     router.push(RoutePaths.comingSoon(module));
+  }
+
+  void _goTab(BuildContext context, String path) {
+    // Same capture-before-pop rule as _openComingSoon.
+    final router = GoRouter.of(context);
+    Navigator.of(context).pop();
+    router.go(path);
   }
 
   Future<void> _confirmLogout(BuildContext context, WidgetRef ref) async {

@@ -153,6 +153,10 @@ enum NotificationType {
   visitorOtp,
   visitorArrived,
   visitorDeparted,
+  // Mobile-only for now, like complaintOverdue: raised by the mock parking
+  // reader / RFID scanners. No backend wire string exists yet for either.
+  parkingAlert,
+  zoneViolation,
   system;
 
   /// The REST endpoint (`GET /api/notifications`) serializes this as a
@@ -192,6 +196,8 @@ enum NotificationType {
         NotificationType.visitorArrived ||
         NotificationType.visitorDeparted =>
           Icons.badge_outlined,
+        NotificationType.parkingAlert => Icons.local_parking_outlined,
+        NotificationType.zoneViolation => Icons.gpp_maybe_outlined,
         NotificationType.system => Icons.info_outline,
       };
 }

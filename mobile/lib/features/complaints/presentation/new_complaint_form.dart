@@ -208,24 +208,14 @@ class _NewComplaintFormState extends ConsumerState<NewComplaintForm> {
             spacing: 8,
             runSpacing: 8,
             children: [
+              // Hand-rolled instead of ChoiceChip: Material chips insist on
+              // painting their own background/overlay, which reads as a grey
+              // pill behind each option.
               for (final severity in ComplaintSeverity.values)
-                ChoiceChip(
-                  label: Text(severity.label),
-                  avatar: CircleAvatar(backgroundColor: severity.color),
+                _SeverityOption(
+                  severity: severity,
                   selected: _severity == severity,
-                  onSelected: (_) => setState(() => _severity = severity),
-                  backgroundColor: Colors.transparent,
-                  selectedColor: Colors.transparent,
-                  elevation: 0,
-                  pressElevation: 0,
-                  shadowColor: Colors.transparent,
-                  surfaceTintColor: Colors.transparent,
-                  side: BorderSide(
-                    color: _severity == severity
-                        ? severity.color
-                        : Colors.black.withValues(alpha: 0.15),
-                    width: _severity == severity ? 1.4 : 1,
-                  ),
+                  onTap: () => setState(() => _severity = severity),
                 ),
             ],
           ),
@@ -283,6 +273,64 @@ class _NewComplaintFormState extends ConsumerState<NewComplaintForm> {
                 : const Text('Submit Complaint'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A severity option with a fully transparent background: colored dot +
+/// label + rounded border. The border uses the severity's own color when
+/// selected, a faint neutral outline otherwise.
+class _SeverityOption extends StatelessWidget {
+  const _SeverityOption({
+    required this.severity,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final ComplaintSeverity severity;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final borderRadius = BorderRadius.circular(20);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: borderRadius,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: Colors.transparent,
+          borderRadius: borderRadius,
+          border: Border.all(
+            color: selected ? severity.color : Colors.black.withValues(alpha: 0.18),
+            width: selected ? 1.6 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 14,
+              height: 14,
+              decoration: BoxDecoration(color: severity.color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 7),
+            Text(
+              severity.label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: selected ? severity.color : Colors.black87,
+              ),
+            ),
+            if (selected) ...[
+              const SizedBox(width: 5),
+              Icon(Icons.check, size: 15, color: severity.color),
+            ],
+          ],
+        ),
       ),
     );
   }

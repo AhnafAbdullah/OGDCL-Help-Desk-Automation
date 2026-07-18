@@ -8,6 +8,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../domain/complaint.dart';
 import '../../../domain/enums.dart';
 import '../../../domain/user.dart';
+import '../../../domain/visitor.dart';
 import '../../../shared/widgets/empty_view.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/loading_view.dart';
@@ -16,6 +17,8 @@ import '../../auth/presentation/auth_controller.dart';
 import '../../auth/presentation/auth_state.dart';
 import '../../complaints/presentation/complaints_providers.dart';
 import '../../complaints/presentation/widgets/complaint_card.dart';
+import '../../parking/presentation/parking_providers.dart';
+import '../../visitors/presentation/visitors_providers.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -32,6 +35,9 @@ class DashboardScreen extends ConsumerWidget {
         onRefresh: () async {
           ref.invalidate(myComplaintsProvider);
           ref.invalidate(assignedComplaintsProvider);
+          ref.invalidate(parkingOverviewProvider);
+          ref.invalidate(myVisitorsProvider);
+          ref.invalidate(gateVisitsProvider);
         },
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 96),
@@ -48,19 +54,19 @@ class DashboardScreen extends ConsumerWidget {
                 UserRole.employee || UserRole.security || UserRole.admin => const _EmployeeStats(),
               },
               const SizedBox(height: 24),
-              _comingSoonModuleTile(
-                context,
-                title: 'Visitor Management',
-                icon: Icons.badge_outlined,
-                module: 'visitors',
+              Text(
+                'Smart Parking',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
-              const SizedBox(height: 10),
-              _comingSoonModuleTile(
-                context,
-                title: 'Smart Parking',
-                icon: Icons.local_parking_outlined,
-                module: 'smart-parking',
+              const SizedBox(height: 12),
+              const _ParkingStatCard(),
+              const SizedBox(height: 24),
+              Text(
+                'Visitors',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
+              const SizedBox(height: 12),
+              _VisitorStatCard(isSecurity: user.role == UserRole.security),
               const SizedBox(height: 24),
               Text(
                 'Recent Complaints',
@@ -101,39 +107,121 @@ class DashboardScreen extends ConsumerWidget {
     );
   }
 
-  /// Placeholder tile for the Visitor/Parking modules — out of scope for
-  /// this app, but shown here so the dashboard reads as the multi-module
-  /// home page it's meant to become once those modules ship.
-  Widget _comingSoonModuleTile(
-    BuildContext context, {
-    required String title,
-    required IconData icon,
-    required String module,
-  }) {
+}
+
+/// Live free-slot count from the (mock) sensor feed — tapping opens the
+/// Smart Parking tab.
+class _ParkingStatCard extends ConsumerWidget {
+  const _ParkingStatCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final overviewAsync = ref.watch(parkingOverviewProvider);
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: () => context.push(RoutePaths.comingSoon(module)),
+        onTap: () => context.go(RoutePaths.parking),
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Icon(icon, color: Colors.black38),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                    const Text(
-                      'Coming soon',
-                      style: TextStyle(color: Colors.black45, fontSize: 12),
-                    ),
-                  ],
+          child: overviewAsync.when(
+            data: (o) => Row(
+              children: [
+                const Icon(Icons.local_parking_outlined, color: AppColors.accent),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${o.free} of ${o.total} slots free',
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                      ),
+                      Text(
+                        o.flagged > 0
+                            ? '${o.flagged} slot${o.flagged == 1 ? '' : 's'} flagged — unregistered vehicle'
+                            : 'All parked vehicles are registered',
+                        style: TextStyle(
+                          color: o.flagged > 0 ? AppColors.bad : Colors.black45,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const Icon(Icons.chevron_right, color: Colors.black26),
-            ],
+                const Icon(Icons.chevron_right, color: Colors.black26),
+              ],
+            ),
+            loading: () => const SizedBox(
+              height: 36,
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            ),
+            error: (_, _) => const Text(
+              'Parking data unavailable.',
+              style: TextStyle(color: Colors.black45, fontSize: 13),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Visitor headline for the dashboard: the guard sees today's gate queue,
+/// everyone else sees their own registered guests.
+class _VisitorStatCard extends ConsumerWidget {
+  const _VisitorStatCard({required this.isSecurity});
+
+  final bool isSecurity;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final visitsAsync = ref.watch(isSecurity ? gateVisitsProvider : myVisitorsProvider);
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => context.go(RoutePaths.visitors),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: visitsAsync.when(
+            data: (visits) {
+              final pending = visits.where((v) => v.status == VisitStatus.preRegistered).length;
+              final onSite = visits.where((v) => v.status == VisitStatus.checkedIn).length;
+              final headline = isSecurity
+                  ? '$pending expected • $onSite on site'
+                  : (pending + onSite == 0
+                      ? 'No active visitors'
+                      : '$pending expected • $onSite on site');
+              final sub = isSecurity
+                  ? 'Verify visitor codes at the gate desk'
+                  : 'Register a guest before they arrive';
+              return Row(
+                children: [
+                  const Icon(Icons.badge_outlined, color: AppColors.accent),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          headline,
+                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                        ),
+                        Text(sub, style: const TextStyle(color: Colors.black45, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, color: Colors.black26),
+                ],
+              );
+            },
+            loading: () => const SizedBox(
+              height: 36,
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            ),
+            error: (_, _) => const Text(
+              'Visitor data unavailable.',
+              style: TextStyle(color: Colors.black45, fontSize: 13),
+            ),
           ),
         ),
       ),
