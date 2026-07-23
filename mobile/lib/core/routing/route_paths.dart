@@ -5,8 +5,6 @@ class RoutePaths {
   static const login = '/login';
   static const home = '/home';
   static const complaints = '/complaints';
-  static const parking = '/parking';
-  static const visitors = '/visitors';
   static const notifications = '/notifications';
 
   // New Complaint has no route of its own — it opens as a modal popup from

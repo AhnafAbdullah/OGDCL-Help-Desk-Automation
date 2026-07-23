@@ -11,12 +11,13 @@ import '../../features/complaints/presentation/complaint_detail_screen.dart';
 import '../../features/complaints/presentation/complaints_list_screen.dart';
 import '../../features/dashboard/presentation/dashboard_screen.dart';
 import '../../features/notifications/presentation/notifications_screen.dart';
-import '../../features/parking/presentation/parking_screen.dart';
 import '../../features/shell/presentation/app_shell.dart';
-import '../../features/visitors/presentation/visitors_screen.dart';
 import 'route_paths.dart';
 
 const _comingSoonModules = <String, (String, IconData)>{
+  'visitors': ('Visitors', Icons.badge_outlined),
+  'gate-desk': ('Gate Desk', Icons.shield_outlined),
+  'smart-parking': ('Smart Parking', Icons.local_parking_outlined),
   'settings': ('Settings', Icons.settings_outlined),
 };
 
@@ -91,14 +92,6 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: RoutePaths.complaints,
             builder: (context, state) => const ComplaintsListScreen(),
-          ),
-          GoRoute(
-            path: RoutePaths.parking,
-            builder: (context, state) => const ParkingScreen(),
-          ),
-          GoRoute(
-            path: RoutePaths.visitors,
-            builder: (context, state) => const VisitorsScreen(),
           ),
           GoRoute(
             path: RoutePaths.notifications,
